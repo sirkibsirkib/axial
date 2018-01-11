@@ -1,0 +1,8 @@
+[package]
+name = "sc-urvy"
+version = "0.1.0"
+authors = ["sirkibsirkib <christopher.esterhuyse@gmail.com>"]
+
+[dependencies]
+magnetic = "2.0.0"
+trailing_cell = "0.2.1"
