@@ -64,7 +64,7 @@ type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBu
 //CLIENT
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-enum InternalMessage {
+pub enum InternalMessage {
     // GiveSalt(u32), //TODO
     LoginRequest(String, String),
     LoginAcceptance(ClientId),
@@ -90,19 +90,24 @@ enum AuthenticationError {
 
 // }
 
-impl From<io::Error> for InternalError {
+impl From<io::Error> for ClientStartError {
     fn from(t: io::Error) -> Self {
         //TODO ??
-        InternalError::LoginRejected
+        ClientStartError::ConnectFailed
     }
 }
 
+pub enum ClientStartError {
+    ConnectFailed,
+    LoginFailed,
+    UnexpectedInternal(InternalMessage),
+}
 
 
-pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str) -> Result<(ServerwardSender<S>, Receiver<C>, ClientId), InternalError>
+pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str) -> Result<(ServerwardSender<S>, Receiver<C>, ClientId), ClientStartError>
 where
-    C: Clientward,
-    S: Serverward + 'static, 
+    C: Clientward + 'static,
+    S: Serverward, 
     T: ToSocketAddrs, {
     // create TcpStream
     // connect to server
@@ -114,27 +119,30 @@ where
     stream.single_write(login_msg);
 
     let mut lil_buffer = [0_u8; 32];
-    let my_cid: ClientId;
-    if let Ok(InternalMessage::LoginAcceptance(cid)) = stream.single_read(&mut lil_buffer[..]) {
+    let response = stream.single_read::<InternalMessage>(&mut lil_buffer[..])?;
+    if let InternalMessage::LoginAcceptance(cid) = response {
         // start up ONE listener thread, give it the PRODUCER handle
         // return CONSUMER handle + naked socket for writing
-        let (p, c) : SpscPair<S> = spsc_queue(DynamicBuffer::new(32).unwrap());
-        let buf = [0u8; 1024];
+        let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(32).unwrap());
+        let mut stream_clone = stream.try_clone()?;
         let _ = thread::spawn(move || {
-            //CONSUMES e
-            while let Ok(msg) = c.pop() {
-
+            let mut buffer = [0u8; 1024];
+            
+            //pulls messages off the line, PRODUCES them
+            while let Ok(msg) = stream_clone.single_read(&mut buffer) {
+                p.push(msg);
             }
         });
         Ok((
-            ServerwardSender {consumer: c},
-            Receiver {stream: stream.try_clone().unwrap(), _phantom: PhantomData::default()},
-            my_cid,
-        ))
+        ServerwardSender { stream: stream, _phantom: PhantomData::default() },
+        Receiver { consumer: c },
+        cid,
+    ))
     } else {
-        Err(InternalError::LoginRejected)
+        Err(ClientStartError::UnexpectedInternal(response))
     }
-
+    
+    
 } 
 
 
@@ -186,7 +194,8 @@ trait Authenticator {
 
 
 pub struct ServerwardSender<S: Serverward> {
-	consumer: SPSCConsumer<S, DynamicBuffer<S>>,
+	stream: TcpStream,
+    _phantom: PhantomData<S>,
 }
 impl<S> ServerwardSender<S> 
 where S: Serverward {
@@ -224,23 +233,15 @@ where C: Clientward {
 //NOT cloneble
 //thread runs until a writer shuts it down
 pub struct Receiver<M: Message> {
-    producer: SPSCConsumer<M, DynamicBuffer<M>>,
+    consumer: SPSCConsumer<M, DynamicBuffer<M>>,
 }
 impl<M> Receiver<M> 
 where M: Message {
     pub fn recv_blocking(&mut self) -> Result<M, PopError> {
-        self.producer.pop()
+        self.consumer.pop()
     }
 
     pub fn try_recv(&mut self) -> Result<M, TryPopError> {
-        self.producer.try_pop()
-    }
-
-    pub fn drain(&mut self) -> Drain<M> {
-        let mut v = vec![];
-        while let Ok(msg) = self.producer.try_pop() {
-            v.push(msg)
-        }
-        v.drain(..)
+        self.consumer.try_pop()
     }
 }
