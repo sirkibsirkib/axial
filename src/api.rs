@@ -8,10 +8,10 @@ use std::marker::PhantomData;
 use std::io::{Read,Write};
 use std::io;
 
-use magnetic::spsc::spsc_queue;
 use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer, Consumer};
-use magnetic::spsc::{SPSCConsumer,SPSCProducer};
+use magnetic::spsc::{SPSCConsumer,SPSCProducer,spsc_queue};
+use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
 use magnetic::{PopError, TryPopError, PushError, TryPushError};
 
 use messaging::*;
@@ -41,8 +41,9 @@ impl TakesMessage<ClientConnection> for HashMap<ClientId, TcpStream> {
     }
 }
 
-type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, ClientConnection>;  
+type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, ClientConnection>;
 type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBuffer<S>>);
+type MpscPair<S> = (MPSCProducer<S, DynamicBuffer<S>>, MPSCConsumer<S, DynamicBuffer<S>>);
 
 // fn read_one<M>(stream: &mut TcpStream, buf: &mut [u8]) -> Option<M>
 // where M: Message {
@@ -127,7 +128,6 @@ where
         let mut stream_clone = stream.try_clone()?;
         let _ = thread::spawn(move || {
             let mut buffer = [0u8; 1024];
-            
             //pulls messages off the line, PRODUCES them
             while let Ok(msg) = stream_clone.single_read(&mut buffer) {
                 p.push(msg);
@@ -141,51 +141,91 @@ where
     } else {
         Err(ClientStartError::UnexpectedInternal(response))
     }
-    
-    
 } 
 
 
-pub fn server_start<C,S>() -> (ClientwardSender<C>, Receiver<Signed<S>>, ClientId)
-where
-    C: Clientward,
-    S: Serverward, {
-    unimplemented!()
-}
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-trait Authenticator {
+pub trait Authenticator {
     //TODO
 }
 
+pub enum ServerStartError {
+    BindFailed,
+}
+
+impl From<io::Error> for ServerStartError {
+    fn from(t: io::Error) -> Self {
+        //TODO ??
+        ServerStartError::BindFailed
+    }
+}
+
+enum StateChange {
+    Join(ClientId, TcpStream),
+    Leave(ClientId),
+}
+
+impl TakesMessage<StateChange> for HashMap<ClientId, TcpStream> {
+    fn take_message(&mut self, msg: &StateChange) {
+        match msg {
+            &StateChange::Join(cid, stream) => self.insert(cid, stream),
+            &StateChange::Leave(cid) => self.remove(&cid),
+        };
+    }
+}
+
+impl Clone for StateChange {
+    fn clone(&self) -> Self {
+        match self {
+            &StateChange::Join(cid, stream) => {
+                StateChange::Join(
+                    cid,
+                    stream.try_clone().unwrap(), // unwrap!! :( TODO
+                )
+            },
+            &StateChange::Leave(cid) => StateChange::Leave(cid),
+        }
+    }
+}
+
+pub fn server_start<A,C,S,T>(addr: T, auth: A) -> Result<(ClientwardSender<C>, Receiver<Signed<S>>), ServerStartError>
+where
+    A: Authenticator,
+    C: Clientward + 'static,
+    S: Serverward, 
+    T: ToSocketAddrs, {
+    // create TcpListener
+    let listener = TcpListener::bind(addr)?;
+    let (p, c) : MpscPair<Signed<C>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
+
+    // keeps track of stream objects
+    let w : TcWriter<StateChange> = TcWriter::new(16);
+    let mut r = w.add_reader(HashMap::new());
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+    thread::spawn(move || {
+        //acceptor thread
+        for maybe_stream in listener.incoming() {
+            if let Ok(stream) = maybe_stream {
+                let mut stream_clone = stream.try_clone().unwrap();
+                thread::spawn(move || {
+                    //fwder thread
+                    let mut buffer = [0u8; 1024];
+                    //pulls messages off the line, PRODUCES them
+                    while let Ok(msg) = stream_clone.single_read(&mut buffer) {
+                        p.push(msg);
+                    }
+                });
+            }
+        }
+    });
+    Ok ((
+        ClientwardSender { streams: r, _phantom: PhantomData::default() },
+        Receiver { consumer: c },
+    ))
+} 
 
 
 
@@ -199,7 +239,7 @@ pub struct ServerwardSender<S: Serverward> {
 }
 impl<S> ServerwardSender<S> 
 where S: Serverward {
-
+    
 }
 
 
@@ -213,8 +253,8 @@ impl<M> Message for Signed<M> where M: Message {}
 // S only
 // runs in local thread
 pub struct ClientwardSender<C: Clientward> {
-	streams: HashMap<ClientId, TcpStream>,
-    phantom: PhantomData<C>,
+	streams: TrailingStreams,
+    _phantom: PhantomData<C>,
 }
 impl<C> ClientwardSender<C> 
 where C: Clientward {
