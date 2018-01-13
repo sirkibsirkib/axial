@@ -28,20 +28,20 @@ pub struct ClientId(u32);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-struct ClientConnection {
-    stream: TcpStream,
-    cid: ClientId,
-}
+// struct ClientConnection {
+//     stream: TcpStream,
+//     cid: ClientId,
+// }
 
-impl TakesMessage<ClientConnection> for HashMap<ClientId, TcpStream> {
-    fn take_message(&mut self, c: &ClientConnection) {
-        if let Ok(s) = c.stream.try_clone() {
-            self.insert(c.cid, s);
-        }
-    }
-}
+// impl TakesMessage<ClientConnection> for HashMap<ClientId, TcpStream> {
+//     fn take_message(&mut self, c: &ClientConnection) {
+//         if let Ok(s) = c.stream.try_clone() {
+//             self.insert(c.cid, s);
+//         }
+//     }
+// }
 
-type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, ClientConnection>;
+type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, StateChange>;
 type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBuffer<S>>);
 type MpscPair<S> = (MPSCProducer<S, DynamicBuffer<S>>, MPSCConsumer<S, DynamicBuffer<S>>);
 
@@ -105,7 +105,8 @@ pub enum ClientStartError {
 }
 
 
-pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str) -> Result<(ServerwardSender<S>, Receiver<C>, ClientId), ClientStartError>
+pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str)
+-> Result<(ServerwardSender<S>, Receiver<SPSCConsumer<C,DynamicBuffer<C>>,C>, ClientId), ClientStartError>
 where
     C: Clientward + 'static,
     S: Serverward, 
@@ -135,7 +136,7 @@ where
         });
         Ok((
         ServerwardSender { stream: stream, _phantom: PhantomData::default() },
-        Receiver { consumer: c },
+        Receiver { consumer: c, _phantom: PhantomData::default() },
         cid,
     ))
     } else {
@@ -190,15 +191,21 @@ impl Clone for StateChange {
     }
 }
 
-pub fn server_start<A,C,S,T>(addr: T, auth: A) -> Result<(ClientwardSender<C>, Receiver<Signed<S>>), ServerStartError>
+type ServRes<C,S> = (
+    ClientwardSender<C>,
+    Receiver<MPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
+);
+
+pub fn server_start<A,C,S,T>(addr: T, auth: A)
+ -> Result<ServRes<C,S>, ServerStartError>
 where
     A: Authenticator,
-    C: Clientward + 'static,
-    S: Serverward, 
+    C: Clientward,
+    S: Serverward + 'static, 
     T: ToSocketAddrs, {
     // create TcpListener
     let listener = TcpListener::bind(addr)?;
-    let (p, c) : MpscPair<Signed<C>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
+    let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
 
     // keeps track of stream objects
     let w : TcWriter<StateChange> = TcWriter::new(16);
@@ -215,7 +222,7 @@ where
                     let mut buffer = [0u8; 1024];
                     //pulls messages off the line, PRODUCES them
                     while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                        p.push(msg);
+                        p.push(Signed::new(msg, ClientId(0)));
                     }
                 });
             }
@@ -223,7 +230,7 @@ where
     });
     Ok ((
         ClientwardSender { streams: r, _phantom: PhantomData::default() },
-        Receiver { consumer: c },
+        Receiver { consumer: c, _phantom: PhantomData::default() },
     ))
 } 
 
@@ -249,6 +256,15 @@ pub struct Signed<M> {
     signature: ClientId,
 }
 impl<M> Message for Signed<M> where M: Message {}
+impl<M> Signed<M>
+where M: Message {
+    pub fn new(msg: M, signature: ClientId) -> Self {
+        Signed {
+            msg: msg,
+            signature: signature,
+        }
+    }
+}
 
 // S only
 // runs in local thread
@@ -272,11 +288,17 @@ where C: Clientward {
 //same for C and S
 //NOT cloneble
 //thread runs until a writer shuts it down
-pub struct Receiver<M: Message> {
-    consumer: SPSCConsumer<M, DynamicBuffer<M>>,
+pub struct Receiver<C,M>
+where
+    C: Consumer<M>,
+    M: Message {
+    consumer: C,
+    _phantom: PhantomData<M>,
 }
-impl<M> Receiver<M> 
-where M: Message {
+impl<C,M> Receiver<C,M> 
+where
+    C: Consumer<M>,
+    M: Message {
     pub fn recv_blocking(&mut self) -> Result<M, PopError> {
         self.consumer.pop()
     }
