@@ -7,6 +7,7 @@ use std::net::{TcpStream, TcpListener};
 use std::marker::PhantomData;
 use std::io::{Read,Write};
 use std::io;
+use std::sync::Arc;
 
 use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer, Consumer};
@@ -171,7 +172,7 @@ enum StateChange {
 impl TakesMessage<StateChange> for HashMap<ClientId, TcpStream> {
     fn take_message(&mut self, msg: &StateChange) {
         match msg {
-            &StateChange::Join(cid, stream) => self.insert(cid, stream),
+            &StateChange::Join(cid, ref stream) => self.insert(cid, stream.try_clone().unwrap()),
             &StateChange::Leave(cid) => self.remove(&cid),
         };
     }
@@ -180,7 +181,7 @@ impl TakesMessage<StateChange> for HashMap<ClientId, TcpStream> {
 impl Clone for StateChange {
     fn clone(&self) -> Self {
         match self {
-            &StateChange::Join(cid, stream) => {
+            &StateChange::Join(cid, ref stream) => {
                 StateChange::Join(
                     cid,
                     stream.try_clone().unwrap(), // unwrap!! :( TODO
@@ -206,6 +207,7 @@ where
     // create TcpListener
     let listener = TcpListener::bind(addr)?;
     let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
+    let mut a_p = Arc::new(p);
 
     // keeps track of stream objects
     let w : TcWriter<StateChange> = TcWriter::new(16);
@@ -217,12 +219,13 @@ where
         for maybe_stream in listener.incoming() {
             if let Ok(stream) = maybe_stream {
                 let mut stream_clone = stream.try_clone().unwrap();
+                let mut a_p_clone = a_p.clone();
                 thread::spawn(move || {
                     //fwder thread
                     let mut buffer = [0u8; 1024];
                     //pulls messages off the line, PRODUCES them
                     while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                        p.push(Signed::new(msg, ClientId(0)));
+                        a_p_clone.push(Signed::new(msg, ClientId(0)));
                     }
                 });
             }
