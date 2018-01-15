@@ -1,11 +1,9 @@
 
 use std::collections::{HashSet,HashMap};
 use std::net::ToSocketAddrs;
-use std::vec::Drain;
 use std::thread;
 use std::net::{TcpStream, TcpListener};
 use std::marker::PhantomData;
-use std::io::{Read,Write};
 use std::io;
 use std::sync::Arc;
 
@@ -13,96 +11,60 @@ use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer, Consumer};
 use magnetic::spsc::{SPSCConsumer,SPSCProducer,spsc_queue};
 use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
-use magnetic::{PopError, TryPopError, PushError, TryPushError};
+use magnetic::{PopError, TryPopError};
 
 use messaging::*;
 
 use trailing_cell::{TakesMessage,TcReader,TcWriter};
 
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-
-
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, Serialize, Deserialize)]
-pub struct ClientId(u32);
+pub struct ClientId(pub u32);
 
-
-////////////////////////////////////////////////////////////////////////////////
-
-// struct ClientConnection {
-//     stream: TcpStream,
-//     cid: ClientId,
-// }
-
-// impl TakesMessage<ClientConnection> for HashMap<ClientId, TcpStream> {
-//     fn take_message(&mut self, c: &ClientConnection) {
-//         if let Ok(s) = c.stream.try_clone() {
-//             self.insert(c.cid, s);
-//         }
-//     }
-// }
 
 type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, StateChange>;
 type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBuffer<S>>);
 type MpscPair<S> = (MPSCProducer<S, DynamicBuffer<S>>, MPSCConsumer<S, DynamicBuffer<S>>);
 
-// fn read_one<M>(stream: &mut TcpStream, buf: &mut [u8]) -> Option<M>
-// where M: Message {
-//     if let Ok(pre_len_buf) = stream.read_u16::<LittleEndian>() {
-//         let limited_buf: &mut [u8] = &mut buf[..(pre_len_buf as usize)];
-//         stream.read_exact(limited_buf);
-//         M::deserialize(limited_buf)
-//     } else { None }
-// }
-
-// fn write_one<M>(stream: &mut TcpStream, msg: &M) -> bool
-// where M: Message {
-//     let data: Vec<u8> = msg.serialize();
-//     stream.write_u32::<LittleEndian>(data.len() as u32);
-//     stream.write(&data[..]).is_ok()
-// }
-
 ////////////////////////////////////////////////////////////////////////////////
 //CLIENT
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub enum InternalMessage {
-    // GiveSalt(u32), //TODO
+pub enum MetaServerward {
     LoginRequest(String, String),
+}
+impl Message for MetaServerward {}
+impl Serverward for MetaServerward {}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub enum MetaClientward {
     LoginAcceptance(ClientId),
-    Err(InternalError),
+    AuthenticationError(AuthenticationError),
+    ClientThresholdReached,
 }
-
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-enum InternalError {
-    Auth(AuthenticationError),
-    AlreadyLoggedIn,
-    ParsingError,
-    LoginRejected,
-}
-impl Message for InternalMessage {}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-enum AuthenticationError {
-    UnknownUsername,
-    PasswordMismatch 
-}
-
-// impl Message for InternalMessage {
-
-// }
+impl Message for MetaClientward {}
+impl Clientward for MetaClientward {}
 
 impl From<io::Error> for ClientStartError {
     fn from(t: io::Error) -> Self {
-        //TODO ??
         ClientStartError::ConnectFailed
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum ClientStartError {
     ConnectFailed,
     LoginFailed,
-    UnexpectedInternal(InternalMessage),
+    ClientThresholdReached,
+    AuthenticationError(AuthenticationError),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub enum AuthenticationError {
+    AlreadyLoggedIn,
+    UnknownUsername,
+    PasswordMismatch,
 }
 
 
@@ -118,39 +80,43 @@ where
 
     // complete handshake & get clientId
     // create Cward producer / consumer
-    let login_msg = InternalMessage::LoginRequest(user.to_owned(), pass.to_owned());
-    stream.single_write(login_msg);
-
-    let mut lil_buffer = [0_u8; 32];
-    let response = stream.single_read::<InternalMessage>(&mut lil_buffer[..])?;
-    if let InternalMessage::LoginAcceptance(cid) = response {
-        // start up ONE listener thread, give it the PRODUCER handle
-        // return CONSUMER handle + naked socket for writing
-        let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(32).unwrap());
-        let mut stream_clone = stream.try_clone()?;
-        let _ = thread::spawn(move || {
-            let mut buffer = [0u8; 1024];
-            //pulls messages off the line, PRODUCES them
-            while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                p.push(msg);
-            }
-        });
-        Ok((
-        ServerwardSender { stream: stream, _phantom: PhantomData::default() },
-        Receiver { consumer: c, _phantom: PhantomData::default() },
-        cid,
-    ))
-    } else {
-        Err(ClientStartError::UnexpectedInternal(response))
+    let login_msg = MetaServerward::LoginRequest(user.to_owned(), pass.to_owned());
+    //identify self to server
+    if stream.single_write(&login_msg).is_err() {
+        return Err(ClientStartError::LoginFailed);
     }
-} 
 
+    let mut lil_buffer = [0_u8; 64];
+    let response = stream.single_read::<MetaClientward>(&mut lil_buffer[..])?;
+    use MetaClientward as MC;
+    match response {
+        MC::LoginAcceptance(cid) => {
+            //server responded that login was successful! begin messaging
+            // start up ONE listener thread, give it the PRODUCER handle
+            // return CONSUMER handle + naked socket for writing
+            let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(32).unwrap());
+            let mut stream_clone = stream.try_clone()?;
+            let _ = thread::spawn(move || {
+                let mut buffer = [0u8; 1024];
+                //pulls messages off the line, PRODUCES them
+                while let Ok(msg) = stream_clone.single_read(&mut buffer) {
+                    p.push(msg);
+                }
+            });
+            Ok((
+                ServerwardSender { stream: stream, _phantom: PhantomData::default() },
+                Receiver { consumer: c, _phantom: PhantomData::default() },
+                cid,
+            ))
+        },
+        MC::ClientThresholdReached => Err(ClientStartError::ClientThresholdReached),
+        MC::AuthenticationError(err) => Err(ClientStartError::AuthenticationError(err)),
+    }
+}
 
-
-
-
-pub trait Authenticator {
-    //TODO
+pub trait Authenticator: Send {
+    fn try_authenticate(&mut self, user: &str, pass: &str)
+     -> Result<ClientId, AuthenticationError>;
 }
 
 pub enum ServerStartError {
@@ -197,17 +163,17 @@ type ServRes<C,S> = (
     Receiver<MPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
 );
 
-pub fn server_start<A,C,S,T>(addr: T, auth: A)
+pub fn server_start<A,T,C,S>(addr: T, mut auth: A)
  -> Result<ServRes<C,S>, ServerStartError>
 where
-    A: Authenticator,
+    A: Authenticator + 'static, 
+    T: ToSocketAddrs,
     C: Clientward,
-    S: Serverward + 'static, 
-    T: ToSocketAddrs, {
+    S: Serverward + 'static, {
     // create TcpListener
     let listener = TcpListener::bind(addr)?;
     let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
-    let mut a_p = Arc::new(p);
+    let a_p = Arc::new(p);
 
     // keeps track of stream objects
     let w : TcWriter<StateChange> = TcWriter::new(16);
@@ -216,23 +182,50 @@ where
 
     thread::spawn(move || {
         //acceptor thread
+        let mut acceptor_buffer = [0u8; 512];
         for maybe_stream in listener.incoming() {
-            if let Ok(stream) = maybe_stream {
-                let mut stream_clone = stream.try_clone().unwrap();
-                let mut a_p_clone = a_p.clone();
-                thread::spawn(move || {
-                    //fwder thread
-                    let mut buffer = [0u8; 1024];
-                    //pulls messages off the line, PRODUCES them
-                    while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                        a_p_clone.push(Signed::new(msg, ClientId(0)));
+            if let Ok(mut stream) = maybe_stream {
+
+                //TODO complete handshake OR drop
+                if let Ok(MetaServerward::LoginRequest(user, pass)) = stream.single_read(&mut acceptor_buffer) {
+                    let mut success = false;
+                    let reply = match auth.try_authenticate(&user, &pass) {
+                        Ok(cid) => {
+                            r.update();
+                            if r.get_mut().contains_key(&cid) {
+                                success = true;
+                                MetaClientward::LoginAcceptance(cid)
+                            } else {
+                                MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
+                            }
+                        },
+                        Err(e) => MetaClientward::AuthenticationError(e)
+                    };
+                    stream.single_write(&reply).expect("scurvy server handshake failed");
+                    if !success {
+                        continue;
+                        //handshake failed
                     }
-                });
+                    let mut stream_clone = stream.try_clone().unwrap();
+                    let mut a_p_clone = a_p.clone();
+                    thread::spawn(move || {
+                        //fwder thread
+                        let mut buffer = [0u8; 1024];
+                        //pulls messages off the line, PRODUCES them
+                        while let Ok(msg) = stream_clone.single_read(&mut buffer) {
+                            if let Err(_) = a_p_clone.push(Signed::new(msg, ClientId(0))) {
+                                // write to queue failed
+                                return;
+                            }
+                        }
+                        // socket closed!
+                    });
+                }
             }
         }
     });
     Ok ((
-        ClientwardSender { streams: r, _phantom: PhantomData::default() },
+        ClientwardSender { streams: w.add_reader(HashMap::new()), _phantom: PhantomData::default() },
         Receiver { consumer: c, _phantom: PhantomData::default() },
     ))
 } 
@@ -249,7 +242,9 @@ pub struct ServerwardSender<S: Serverward> {
 }
 impl<S> ServerwardSender<S> 
 where S: Serverward {
-    
+    pub fn send(&mut self, msg: &S) -> bool {
+        self.stream.single_write(msg).is_ok()
+    }
 }
 
 
@@ -269,6 +264,7 @@ where M: Message {
     }
 }
 
+
 // S only
 // runs in local thread
 pub struct ClientwardSender<C: Clientward> {
@@ -278,11 +274,26 @@ pub struct ClientwardSender<C: Clientward> {
 impl<C> ClientwardSender<C> 
 where C: Clientward {
     pub fn send_to(&mut self, msg: C, cid: ClientId) -> bool {
-        unimplemented!()
+        self.streams.update();
+        if let Some(stream) = self.streams.get_mut().get_mut(&cid) {
+            stream.single_write(&msg).is_ok()
+        } else {
+            false
+        }
     }
 
-    pub fn send_to_all(&mut self, msg: C, cids: &HashSet<ClientId>) {
-        unimplemented!()
+    pub fn send_to_all(&mut self, msg: C, cids: &HashSet<ClientId>) -> u32 {
+        self.streams.update();
+        let borrow = self.streams.get_mut();
+        let mut successes = 0;
+        for cid in cids.iter() {
+            if let Some(stream) = borrow.get_mut(cid) {
+                if stream.single_write(&msg).is_ok() {
+                    successes += 1;
+                }
+            }
+        }
+        successes
     }
 }
 

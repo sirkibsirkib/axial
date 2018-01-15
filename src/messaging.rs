@@ -1,5 +1,3 @@
-
-use std::net::TcpListener;
 use std::net::TcpStream;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::io::{ErrorKind};
@@ -9,7 +7,6 @@ use bincode;
 use serde::{Serialize,Deserialize};
 use serde::de::DeserializeOwned;
 use std::io::Write;
-use std::io::{stdin,stdout};
 use std::io;
 
 pub trait Message: Serialize + DeserializeOwned {}
@@ -19,7 +16,7 @@ pub trait Clientward: Message {}
 pub trait Messenger {
     fn single_read<'a, S>(&mut self, buf : &'a mut [u8]) -> Result<S, io::Error>
         where S : Deserialize<'a>;
-    fn single_write<S>(&mut self, s : S) -> Result<(), io::Error>
+    fn single_write<S>(&mut self, s : &S) -> Result<(), io::Error>
         where S : Serialize;
     fn single_write_bytes(&mut self, bytes : &[u8]) -> Result<(), io::Error>;
 }
@@ -47,7 +44,7 @@ impl Messenger for TcpStream {
         }
     }
 
-    fn single_write<S>(&mut self, s : S) -> Result<(), io::Error>
+    fn single_write<S>(&mut self, s : &S) -> Result<(), io::Error>
     where S : Serialize {
         println!("STARTING SINGLE_WRITE");
         // let stringy = serde_json::to_string(&s).expect("serde outgoing json ONLY");
