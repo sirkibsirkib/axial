@@ -3,17 +3,20 @@ extern crate serde_derive;
 extern crate serde;
 extern crate bincode;
 extern crate magnetic;
-extern crate trailing_cell;
 extern crate byteorder;
 extern crate bidir_map;
 
 mod server;
-mod api;
+mod client;
 mod messaging;
+mod common;
 
 #[cfg(test)]
 mod tests;
 
-
-pub use messaging::{Message};
-pub use api::*;
+pub use common::{
+    Message, Clientward, Serverward, ClientId,
+    Authenticator, AuthenticationError
+};
+pub use client::{client_start, ClientStartError};
+pub use server::{server_start, ServerStartError, Signed};

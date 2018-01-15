@@ -4,7 +4,6 @@ extern crate byteorder;
 use std::io::prelude::Read;
 use bincode;
 use serde::{Serialize,Deserialize};
-use serde::de::DeserializeOwned;
 use std::io::Write;
 use std::io;
 use std::time::{Duration};
@@ -20,8 +19,6 @@ impl From<io::Error> for MessageError {
         MessageError::Crash
     }
 }
-
-pub trait Message: Serialize + DeserializeOwned {}
 
 pub trait Messenger {
     fn single_read<'a, S>(&mut self, buf : &'a mut [u8]) -> Result<S, MessageError>
