@@ -7,6 +7,7 @@ extern crate trailing_cell;
 extern crate byteorder;
 extern crate bidir_map;
 
+mod server;
 mod api;
 mod messaging;
 
@@ -14,5 +15,5 @@ mod messaging;
 mod tests;
 
 
-pub use messaging::{Message,Clientward,Serverward};
+pub use messaging::{Message};
 pub use api::*;
