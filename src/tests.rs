@@ -1,11 +1,8 @@
 use bidir_map::BidirMap;
 use std::collections::HashMap;
-// use std::time;
 use std::thread;
 
-
 use super::*;
-
 
 ///////////////////////////// TEST IMPLEMENTATION //////////////////////////////
 
@@ -258,8 +255,10 @@ fn broadcast() {
     .expect("charlie failed to join");
     assert_eq!(cid, ClientId(2));
 
+    // send this message to everyone
     assert_eq!(s_w.send_to_all(&TestClientward::HelloToClient), 3);
     
+    // all three clients do indeed get a copy of the message
     assert_eq!(TestClientward::HelloToClient, alice_reader.recv_blocking()  .expect("alice failed"));
     assert_eq!(TestClientward::HelloToClient, bob_reader.recv_blocking()    .expect("bob failed"));
     assert_eq!(TestClientward::HelloToClient, charlie_reader.recv_blocking().expect("charlie failed"));
@@ -267,21 +266,23 @@ fn broadcast() {
 
 #[test]
 fn fine_server_control() {
-    //TODO single_recv blocks indefinitely!
+    let addr = "127.0.0.1:5564";
+    let mut auth = test_auth();
+    let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
+    .expect("server start failed");
 
+    // the server isnt listening. alice can't connect!
+    client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    .err().expect("alice was authenticated, but shouldnt have been!");
 
-    // let addr = "127.0.0.1:5564";
-    // let mut auth = test_auth();
-    // let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
-    // .expect("server start failed");
+    //start a new thread to listen for the server endlessly
+    thread::spawn(move || cntl.accept_all(&mut auth) );
 
-    // // the server isnt listening. alice can't connect!
-    // let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass")
-    // .err().expect("client was authenticated, but shouldnt have been!");
-
-    // thread::spawn(move || cntl.accept_one(&mut auth) );
     
-    // // NOW alice gets accepted
-    // let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass")
-    // .err().expect("client was authenticated, but shouldnt have been!");
+    // bob gets accepted now that the server is listening
+    client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    .expect("bob was expecting to be authenticated!");
 }
+
+
+// TODO check if client connect timeout is working

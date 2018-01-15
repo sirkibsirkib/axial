@@ -5,7 +5,6 @@ use magnetic::Consumer;
 use std::marker::PhantomData;
 use magnetic::{PopError, TryPopError};
 
-
 pub trait Message: Serialize + DeserializeOwned {}
 pub trait Serverward: Message {}
 pub trait Clientward: Message {}
@@ -38,7 +37,7 @@ where C: Consumer<M>, M: Message {
         self.consumer.pop()
     }
 
-    pub fn try_recv(&mut self) -> Result<M, TryPopError> {
+    pub fn recv_nonblocking(&mut self) -> Result<M, TryPopError> {
         self.consumer.try_pop()
     }
 }

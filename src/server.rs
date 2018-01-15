@@ -75,12 +75,18 @@ where C: Clientward, S: Serverward + 'static {
     }
 
     pub fn accept_all<A: Authenticator>(&mut self, auth: &mut A) {
-        while self.accept_one(auth) {}
+        loop { self.accept_one(auth); }
     }
 
-    pub fn accept_one<A: Authenticator>(&mut self, auth: &mut A) -> bool {
+    pub fn accept_all_waiting<A: Authenticator>(&mut self, auth: &mut A) -> u32 {
+        let mut total = 0;
+        while let Some(_) = self.accept_one(auth) { total += 1 }
+        total
+    }
+
+    pub fn accept_one<A: Authenticator>(&mut self, auth: &mut A) -> Option<ClientId> {
         if let Ok((mut stream, _)) = self.listener.accept() {
-            if server_handshake(auth, &mut stream, &mut self.acceptor_buffer, &mut self.w, &mut self.streams) {
+            if let Some(cid) = server_handshake(auth, &mut stream, &mut self.acceptor_buffer, &mut self.w, &mut self.streams) {
                 let mut stream_clone = stream.try_clone().unwrap();
                 let mut a_p_clone = self.producer.clone();
                 thread::spawn(move || {
@@ -88,19 +94,19 @@ where C: Clientward, S: Serverward + 'static {
                     let mut buffer = [0u8; 1024];
                     //pulls messages off the line, PRODUCES them
                     while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                        if let Err(_) = a_p_clone.push(Signed::new(msg, ClientId(0))) {
+                        if let Err(_) = a_p_clone.push(Signed::new(msg, cid)) {
                             // write to queue failed
-                            return;
+                            return; // listener 
                         }
                     }
                     // socket closed!
                 });
-                true
+                Some(cid)
             } else {
-                false
+                None
             }
         } else {
-            false
+            None
         }
     }
 
@@ -284,10 +290,12 @@ S: Serverward + 'static, {
 
 ////////////////////////////// AUX FUNCTIONS ///////////////////////////////////
 
-fn server_handshake<A>(auth: &mut A, stream: &mut TcpStream, acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>, r: &mut TrailingStreams) -> bool
+fn server_handshake<A>(auth: &mut A, stream: &mut TcpStream,
+                       acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>,
+                       r: &mut TrailingStreams) -> Option<ClientId>
 where
     A: Authenticator, {
-    let mut success = false;
+    let mut accepted: Option<ClientId> = None;
     if let Ok(MetaServerward::LoginRequest(user, pass)) = stream.single_read(acceptor_buffer) {
         let reply = match auth.try_authenticate(&user, &pass) {
             Ok(cid) => {
@@ -296,13 +304,15 @@ where
                     MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
                 } else {
                     w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
-                    success = true;
+                    accepted = Some(cid);
                     MetaClientward::LoginAcceptance(cid)
                 }
             },
             Err(e) => MetaClientward::AuthenticationError(e),
         };
-        stream.single_write(&reply).expect("scurvy server handshake failed");
+        if let Err(_) = stream.single_write(&reply) {
+            accepted = None;
+        }
     }
-    success
+    accepted
 }

@@ -98,7 +98,8 @@ where
     }
 
     let mut lil_buffer = [0_u8; 64];
-    let response = stream.single_read::<MetaClientward>(&mut lil_buffer[..])?;
+    let timeout = Duration::from_millis(500);
+    let response = stream.single_timout_silence_read::<MetaClientward>(&mut lil_buffer[..], timeout)?;
     use common::MetaClientward as MC;
     match response {
         MC::LoginAcceptance(cid) => {
