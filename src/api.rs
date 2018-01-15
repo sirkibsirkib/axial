@@ -13,21 +13,23 @@ use magnetic::spsc::{SPSCConsumer,SPSCProducer,spsc_queue};
 use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
 use magnetic::{PopError, TryPopError};
 
-use messaging::*;
 
 use trailing_cell::{TakesMessage,TcReader,TcWriter};
 
 
+use messaging::*;
+
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct ClientId(pub u32);
-
 
 type TrailingStreams = TcReader<HashMap<ClientId, TcpStream>, StateChange>;
 type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBuffer<S>>);
 type MpscPair<S> = (MPSCProducer<S, DynamicBuffer<S>>, MPSCConsumer<S, DynamicBuffer<S>>);
 
-////////////////////////////////////////////////////////////////////////////////
-//CLIENT
+///////////////////////////// MESSAGES /////////////////////////////////////////
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum MetaServerward {
@@ -47,7 +49,7 @@ impl Message for MetaClientward {}
 impl Clientward for MetaClientward {}
 
 impl From<io::Error> for ClientStartError {
-    fn from(t: io::Error) -> Self {
+    fn from(_: io::Error) -> Self {
         ClientStartError::ConnectFailed
     }
 }
@@ -67,6 +69,7 @@ pub enum AuthenticationError {
     PasswordMismatch,
 }
 
+///////////////////////////// FUNCTIONS ////////////////////////////////////////
 
 pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str)
 -> Result<(ServerwardSender<S>, Receiver<SPSCConsumer<C,DynamicBuffer<C>>,C>, ClientId), ClientStartError>
@@ -100,7 +103,10 @@ where
                 let mut buffer = [0u8; 1024];
                 //pulls messages off the line, PRODUCES them
                 while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-                    p.push(msg);
+                    if let Err(_) = p.push(msg) {
+                        //failed to write to stream
+                        return;
+                    }
                 }
             });
             Ok((
@@ -119,12 +125,13 @@ pub trait Authenticator: Send {
      -> Result<ClientId, AuthenticationError>;
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum ServerStartError {
     BindFailed,
 }
 
 impl From<io::Error> for ServerStartError {
-    fn from(t: io::Error) -> Self {
+    fn from(_: io::Error) -> Self {
         //TODO ??
         ServerStartError::BindFailed
     }
@@ -177,6 +184,7 @@ where
 
     // keeps track of stream objects
     let w : TcWriter<StateChange> = TcWriter::new(16);
+    let w_clone = w.clone();
     let mut r = w.add_reader(HashMap::new());
 
 
@@ -193,10 +201,11 @@ where
                         Ok(cid) => {
                             r.update();
                             if r.get_mut().contains_key(&cid) {
-                                success = true;
-                                MetaClientward::LoginAcceptance(cid)
-                            } else {
                                 MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
+                            } else {
+                                success = true;
+                                w_clone.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
+                                MetaClientward::LoginAcceptance(cid)
                             }
                         },
                         Err(e) => MetaClientward::AuthenticationError(e)
@@ -250,8 +259,8 @@ where S: Serverward {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Signed<M> {
-    msg: M,
-    signature: ClientId,
+    pub msg: M,
+    pub signature: ClientId,
 }
 impl<M> Message for Signed<M> where M: Message {}
 impl<M> Signed<M>
@@ -273,7 +282,7 @@ pub struct ClientwardSender<C: Clientward> {
 }
 impl<C> ClientwardSender<C> 
 where C: Clientward {
-    pub fn send_to(&mut self, msg: C, cid: ClientId) -> bool {
+    pub fn send_to(&mut self, msg: &C, cid: ClientId) -> bool {
         self.streams.update();
         if let Some(stream) = self.streams.get_mut().get_mut(&cid) {
             stream.single_write(&msg).is_ok()
@@ -282,7 +291,7 @@ where C: Clientward {
         }
     }
 
-    pub fn send_to_all(&mut self, msg: C, cids: &HashSet<ClientId>) -> u32 {
+    pub fn send_to_all(&mut self, msg: &C, cids: &HashSet<ClientId>) -> u32 {
         self.streams.update();
         let borrow = self.streams.get_mut();
         let mut successes = 0;
