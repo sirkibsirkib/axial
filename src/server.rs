@@ -14,15 +14,21 @@ use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer};
 use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
 
-
-
-
 use common::*;
 use messaging::*;
 
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+
+pub trait ClientwardSender<C: Clientward> {
+    fn send_to(&mut self, &C, ClientId) -> bool;
+    fn send_to_sequence<'a, I>(&mut self, &C, I) -> u32 where I: Iterator<Item = &'a ClientId>;
+    fn send_to_all(&mut self, &C) -> u32;
+    fn online_clients(&mut self) -> HashSet<ClientId>;
+}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Signed<M> {
     pub msg: M,
     pub signature: ClientId,
@@ -37,14 +43,6 @@ M: Message {
             signature: signature,
         }
     }
-}
-
-//TODO
-trait Server<C: Clientward> {
-    fn send_to(&mut self, &C, ClientId) -> bool;
-    fn send_to_some<'a, I>(&mut self, &C, I) -> u32 where I: Iterator<Item = &'a ClientId>;
-    fn send_to_all(&mut self, &C) -> u32;
-    fn shutdown(&mut self);
 }
 
 pub struct ServerControl<C,S>
@@ -157,14 +155,14 @@ S: Serverward + 'static {
 
 // S only
 // runs in local thread
-pub struct ClientwardSender<C: Clientward> {
+pub struct RemoteClientwardSender<C: Clientward> {
 	streams: TrailingStreams,
     _phantom: PhantomData<C>,
 }
-impl<C> ClientwardSender<C> 
+impl<C> ClientwardSender<C> for RemoteClientwardSender<C> 
 where
 C: Clientward {
-    pub fn send_to(&mut self, msg: &C, cid: ClientId) -> bool {
+    fn send_to(&mut self, msg: &C, cid: ClientId) -> bool {
         self.streams.update();
         if let Some(stream) = self.streams.get_mut().get_mut(&cid) {
             stream.single_write(&msg).is_ok()
@@ -173,12 +171,13 @@ C: Clientward {
         }
     }
 
-    pub fn send_to_set(&mut self, msg: &C, cids: &HashSet<ClientId>) -> u32 {
+    fn send_to_sequence<'a, I>(&mut self, msg: &C, cids: I) -> u32
+    where I: Iterator<Item = &'a ClientId> {
         let bytes = bincode::serialize(msg, bincode::Infinite).expect("went kk lel");
         self.streams.update();
         let borrow = self.streams.get_mut();
         let mut successes = 0;
-        for cid in cids.iter() {
+        for cid in cids {
             if let Some(stream) = borrow.get_mut(cid) {
                 if stream.single_write_bytes(&bytes).is_ok() {
                     successes += 1;
@@ -188,7 +187,7 @@ C: Clientward {
         successes
     }
 
-    pub fn send_to_all(&mut self, msg: &C) -> u32 {
+    fn send_to_all(&mut self, msg: &C) -> u32 {
         let bytes = bincode::serialize(msg, bincode::Infinite).expect("went kk lel");
         self.streams.update();
         let mut successes = 0;
@@ -198,6 +197,11 @@ C: Clientward {
             }
         }
         successes
+    }
+
+    
+    fn online_clients(&mut self) -> HashSet<ClientId> {
+        self.streams.get_mut().keys().map(|x| *x).collect()
     }
 }
 
@@ -259,7 +263,7 @@ impl Clone for StateChange {
 ////////////////////////////////////////////////////////////////////////////////
 
 type ServRes<C,S> = (
-    ClientwardSender<C>,
+    RemoteClientwardSender<C>,
     Receiver<MPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
     ServerControl<C,S>,
 );
@@ -272,14 +276,14 @@ C: Clientward,
 S: Serverward + 'static, {
     // create TcpListener
     let listener = TcpListener::bind(addr)?;
-    let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(32).unwrap());
+    let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(128).unwrap());
     let a_p = Arc::new(p);
 
     // keeps track of stream objects
     let w : TcWriter<StateChange> = TcWriter::new(16);
     let sender_reader = w.add_reader(HashMap::new());
     Ok ((
-        ClientwardSender { streams: sender_reader, _phantom: PhantomData::default() },
+        RemoteClientwardSender { streams: sender_reader, _phantom: PhantomData::default() },
         ::common::new_receiver(c),
         ServerControl::new(w, listener, a_p),
     ))

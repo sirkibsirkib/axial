@@ -17,20 +17,24 @@ type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBu
 
 //////////////////////////// RETURN TYPES & API ////////////////////////////////
 
+pub trait ServerwardSender<S: Serverward> {
+    fn send(&mut self, msg: &S) -> bool;
+    fn shutdown(self);
+}
 
-pub struct ServerwardSender<S: Serverward> {
+pub struct RemoteServerwardSender<S: Serverward> {
 	stream: TcpStream,
     _phantom: PhantomData<S>,
 }
-impl<S> ServerwardSender<S> 
-where
-S: Serverward {
-    pub fn send(&mut self, msg: &S) -> bool {
+impl<S> ServerwardSender<S> for RemoteServerwardSender<S>
+where S: Serverward {
+    fn send(&mut self, msg: &S) -> bool {
         self.stream.single_write(msg).is_ok()
     }
 
-    pub fn shutdown(&mut self) {
+    fn shutdown(self) {
         let _ = self.stream.shutdown(::std::net::Shutdown::Both); //TODO
+        drop(self);
     }
 }
 
@@ -79,7 +83,7 @@ fn client_connect<T: ToSocketAddrs>(addr: T, connect_timeout: Option<Duration>) 
 ///////////////////////////// FUNCTIONS ////////////////////////////////////////
 
 pub fn client_start<C,S,T>(addr: T, user: &str, pass: &str, connect_timeout: Option<Duration>)
--> Result<(ServerwardSender<S>, Receiver<SPSCConsumer<C,DynamicBuffer<C>>,C>, ClientId), ClientStartError>
+-> Result<(RemoteServerwardSender<S>, Receiver<SPSCConsumer<C,DynamicBuffer<C>>,C>, ClientId), ClientStartError>
 where
     C: Clientward + 'static,
     S: Serverward, 
@@ -106,7 +110,7 @@ where
             //server responded that login was successful! begin messaging
             // start up ONE listener thread, give it the PRODUCER handle
             // return CONSUMER handle + naked socket for writing
-            let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(32).unwrap());
+            let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(128).unwrap());
             let mut stream_clone = stream.try_clone()?;
             let _ = thread::spawn(move || {
                 let mut buffer = [0u8; 1024];
@@ -119,7 +123,7 @@ where
                 }
             });
             Ok((
-                ServerwardSender { stream: stream, _phantom: PhantomData::default() },
+                RemoteServerwardSender { stream: stream, _phantom: PhantomData::default() },
                 ::common::new_receiver(c),
                 cid,
             ))

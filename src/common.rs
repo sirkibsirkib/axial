@@ -4,8 +4,9 @@ use serde::de::DeserializeOwned;
 use magnetic::Consumer;
 use std::marker::PhantomData;
 use magnetic::{PopError, TryPopError};
+// use std::collections::HashSet;
 
-pub trait Message: Serialize + DeserializeOwned {}
+pub trait Message: Serialize + DeserializeOwned + Clone {}
 pub trait Serverward: Message {}
 pub trait Clientward: Message {}
 
@@ -17,7 +18,8 @@ pub trait Authenticator: Send {
      -> Result<ClientId, AuthenticationError>;
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum AuthenticationError {
     AlreadyLoggedIn,
     UnknownUsername,
@@ -45,7 +47,7 @@ where C: Consumer<M>, M: Message {
 /////////////////////////////// PRIVATE ////////////////////////////////////////
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MetaServerward {
     LoginRequest(String, String),
 }
@@ -53,7 +55,7 @@ impl Message for MetaServerward {}
 impl Serverward for MetaServerward {}
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MetaClientward {
     LoginAcceptance(ClientId),
     AuthenticationError(AuthenticationError),
@@ -66,3 +68,4 @@ pub fn new_receiver<C,M>(consumer: C) -> Receiver<C,M>
 where C: Consumer<M>, M: Message {
     Receiver {consumer: consumer, _phantom: PhantomData::default()}
 }
+

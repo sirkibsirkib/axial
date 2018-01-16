@@ -12,3 +12,13 @@ bincode = "0.9.2"
 byteorder = "1.2.1"
 crypto-hash = "0.3.0"
 bidir-map = "1.0.0"
+
+
+# TODO
+# clean up unwraps()
+# clean up silly expect() messages
+# test speed?
+# minimize API
+# write docs
+# spell check docs
+# impl server kick

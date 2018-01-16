@@ -5,17 +5,21 @@ extern crate magnetic;
 extern crate byteorder;
 extern crate bidir_map;
 
+
 mod server;
 mod client;
 mod messaging;
 mod common;
+mod coupler;
 
 #[cfg(test)]
 mod tests;
 
+
 pub use common::{
     Message, Clientward, Serverward, ClientId,
-    Authenticator, AuthenticationError
+    Authenticator, AuthenticationError,
 };
-pub use client::{client_start, ClientStartError};
-pub use server::{server_start, ServerStartError, Signed};
+pub use client::{client_start, ClientStartError, RemoteServerwardSender};
+pub use server::{server_start, ServerStartError, RemoteClientwardSender};
+pub use coupler::{coupler_start,LocalServerwardSender, LocalClientwardSender};
