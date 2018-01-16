@@ -19,8 +19,7 @@ where
 C: Clientward {
     fn send_to(&mut self, msg: &C, cid: ClientId) -> bool {
         if cid == self.consuming_client_id {
-            self.producer.push(msg.clone());
-            true
+            self.producer.push(msg.clone()).is_ok()
         } else {
             false
         }
@@ -31,16 +30,17 @@ C: Clientward {
         let mut successes = 0;
         for cid in cids {
             if *cid == self.consuming_client_id {
-                self.producer.push(msg.clone());
-                successes += 1;
+                if self.producer.push(msg.clone()).is_ok() {
+                    successes += 1;
+                }
+                
             }
         }
         successes
     }
 
     fn send_to_all(&mut self, msg: &C) -> u32 {
-        self.producer.push(msg.clone());
-        1
+        if self.producer.push(msg.clone()).is_ok() {1} else {0}
     }
 
     fn online_clients(&mut self) -> HashSet<ClientId> {
@@ -58,8 +58,7 @@ pub struct LocalServerwardSender<S: Serverward> {
 impl<S> ServerwardSender<S> for LocalServerwardSender<S>
 where S: Serverward {
     fn send(&mut self, msg: &S) -> bool {
-        self.producer.push(Signed::new(msg.clone(), self.my_cid));
-        true
+        self.producer.push(Signed::new(msg.clone(), self.my_cid)).is_ok()
     }
 
     fn shutdown(self) {

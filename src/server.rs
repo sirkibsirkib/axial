@@ -29,19 +29,17 @@ pub trait ClientwardSender<C: Clientward> {
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Signed<M> {
-    pub msg: M,
-    pub signature: ClientId,
-}
+pub struct Signed<M>(pub M, pub ClientId);
 impl<M> Message for Signed<M> where M: Message {}
 impl<M> Signed<M>
 where
 M: Message {
     pub fn new(msg: M, signature: ClientId) -> Self {
-        Signed {
-            msg: msg,
-            signature: signature,
-        }
+        Signed(msg, signature)
+        // Signed {
+        //     msg: msg,
+        //     signature: signature,
+        // }
     }
 }
 

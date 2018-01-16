@@ -87,14 +87,14 @@ fn bind_fail() {
 
     //start server
     let _ = server_start::<_,TestClientward,TestServerward>(addr)
-    .err().expect("server bound again?");
+    .expect_err("server bound again?");
 }
 
 #[test]
 fn no_server() {
     let addr = "127.0.0.1:5555";
     let _ = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .err().expect("client was authenticated, but shouldnt have been!");
+    .expect_err("client was authenticated, but shouldnt have been!");
     //no server running on port 5555 probably
 }
 
@@ -111,7 +111,7 @@ fn client_bad_user() {
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "NOT_A_USER_NAME", "alice_pass", None)
-    .err().expect("client was authenticated, but shouldnt have been!");
+    .expect_err("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::UnknownUsername));
 }
@@ -129,7 +129,7 @@ fn client_password_mismatch() {
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_PASS", None)
-    .err().expect("client was authenticated, but shouldnt have been!");
+    .expect_err("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::PasswordMismatch));
 }
@@ -151,7 +151,7 @@ fn client_twice() {
     assert_eq!(cid, ClientId(0));
 
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .err().expect("client was authenticated, but shouldnt have been!");
+    .expect_err("client was authenticated, but shouldnt have been!");
     //alice cannot be logged in twice
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::AlreadyLoggedIn));
 }
@@ -273,7 +273,7 @@ fn fine_server_control() {
 
     // the server isnt listening. alice can't connect!
     client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .err().expect("alice was authenticated, but shouldnt have been!");
+    .expect_err("alice was authenticated, but shouldnt have been!");
 
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
