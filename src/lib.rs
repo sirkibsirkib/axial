@@ -20,6 +20,6 @@ pub use common::{
     Message, Clientward, Serverward, ClientId,
     Authenticator, AuthenticationError,
 };
-pub use client::{client_start, ClientStartError, RemoteServerwardSender};
-pub use server::{server_start, ServerStartError, RemoteClientwardSender};
-pub use coupler::{coupler_start,LocalServerwardSender, LocalClientwardSender};
+pub use client::{client_start, ClientStartError, RemoteServerwardSender, ServerwardSender};
+pub use server::{server_start, ServerStartError, RemoteClientwardSender, ClientwardSender, Signed};
+pub use coupler::{coupler_start, LocalServerwardSender, LocalClientwardSender};

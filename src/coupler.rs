@@ -71,22 +71,22 @@ where S: Serverward {
 pub fn coupler_start<C,S>(client_id: ClientId)
  -> (
         LocalClientwardSender<C>,
-        Receiver<SPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
-        LocalServerwardSender<S>,
         Receiver<SPSCConsumer<C, DynamicBuffer<C>>, C>,
+        LocalServerwardSender<S>,
+        Receiver<SPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
     )
 where
 C: Clientward,
 S: Serverward, {
     // clientward
-    let (p1, c1) = spsc_queue(DynamicBuffer::new(128).unwrap()); 
+    let (cward_p, cward_c) = spsc_queue(DynamicBuffer::new(128).unwrap()); 
     
     // serverward
-    let (p2, c2) = spsc_queue(DynamicBuffer::new(128).unwrap());
+    let (sward_p, sward_c) = spsc_queue(DynamicBuffer::new(128).unwrap());
     (
-        LocalClientwardSender { consuming_client_id: client_id, producer: p1 },
-        ::common::new_receiver(c2),
-        LocalServerwardSender { my_cid: client_id, producer: p2 },
-        ::common::new_receiver(c1),
+        LocalClientwardSender { consuming_client_id: client_id, producer: cward_p },
+        ::common::new_receiver(cward_c),
+        LocalServerwardSender { my_cid: client_id, producer: sward_p },
+        ::common::new_receiver(sward_c),
     )
 } 

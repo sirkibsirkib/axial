@@ -22,6 +22,7 @@ pub trait ServerwardSender<S: Serverward> {
     fn shutdown(self);
 }
 
+#[derive(Debug)]
 pub struct RemoteServerwardSender<S: Serverward> {
 	stream: TcpStream,
     _phantom: PhantomData<S>,

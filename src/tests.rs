@@ -6,6 +6,7 @@ use super::*;
 
 ///////////////////////////// TEST IMPLEMENTATION //////////////////////////////
 
+#[derive(Debug)]
 struct TestAuthenticator {
     users: BidirMap<ClientId, String>,
     passwords: HashMap<ClientId, String>,
@@ -87,14 +88,14 @@ fn bind_fail() {
 
     //start server
     let _ = server_start::<_,TestClientward,TestServerward>(addr)
-    .expect_err("server bound again?");
+    .err().expect("server bound again?");
 }
 
 #[test]
 fn no_server() {
     let addr = "127.0.0.1:5555";
     let _ = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .expect_err("client was authenticated, but shouldnt have been!");
+    .err().expect("client was authenticated, but shouldnt have been!");
     //no server running on port 5555 probably
 }
 
@@ -111,7 +112,7 @@ fn client_bad_user() {
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "NOT_A_USER_NAME", "alice_pass", None)
-    .expect_err("client was authenticated, but shouldnt have been!");
+    .err().expect("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::UnknownUsername));
 }
@@ -129,7 +130,7 @@ fn client_password_mismatch() {
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_PASS", None)
-    .expect_err("client was authenticated, but shouldnt have been!");
+    .err().expect("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::PasswordMismatch));
 }
@@ -151,7 +152,7 @@ fn client_twice() {
     assert_eq!(cid, ClientId(0));
 
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .expect_err("client was authenticated, but shouldnt have been!");
+    .err().expect("client was authenticated, but shouldnt have been!");
     //alice cannot be logged in twice
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::AlreadyLoggedIn));
 }
@@ -273,7 +274,7 @@ fn fine_server_control() {
 
     // the server isnt listening. alice can't connect!
     client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
-    .expect_err("alice was authenticated, but shouldnt have been!");
+    .err().expect("alice was authenticated, but shouldnt have been!");
 
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
@@ -284,5 +285,36 @@ fn fine_server_control() {
     .expect("bob was expecting to be authenticated!");
 }
 
+#[test]
+fn coupler() {
+    let (mut cward_send, mut cward_recv,
+         mut sward_send, mut sward_recv) = coupler_start(ClientId(0));
 
-// TODO check if client connect timeout is working
+    //fails. nonblocking call doesnt wait for something to be sent
+    assert!(cward_recv.recv_nonblocking().is_err());
+
+    //server sends something to all clients (just client 0)
+    cward_send.send_to_all(&TestClientward::HelloToClient);
+    assert_eq!(
+        cward_recv.recv_blocking().unwrap(),
+        TestClientward::HelloToClient,
+    );
+
+    //client successfully sends a message toward server, which server receives annotated with cid 0
+    assert!(sward_send.send(&TestServerward::HelloToServer));
+    assert_eq!(
+        sward_recv.recv_blocking().unwrap(),
+        Signed(TestServerward::HelloToServer, ClientId(0)),
+    );
+
+    //server sends messages to clients 1,2,3. 
+    let seq = vec![ClientId(1), ClientId(2), ClientId(3)];
+    // 0 of the messages are send successfully
+    assert_eq!(
+        cward_send.send_to_sequence(&TestClientward::HelloToClient, seq.iter()),
+        0,
+    );
+
+    //Client0 doesn't receive it
+    assert!(cward_recv.recv_nonblocking().is_err());
+}
