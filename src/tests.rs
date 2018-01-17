@@ -287,32 +287,44 @@ fn fine_server_control() {
 
 #[test]
 fn coupler() {
+    // create a coupler with one client: client 0
     let (mut cward_send, mut cward_recv,
          mut sward_send, mut sward_recv) = coupler_start(ClientId(0));
 
     //fails. nonblocking call doesnt wait for something to be sent
     assert!(cward_recv.recv_nonblocking().is_err());
 
+    //--------------------------------------------------------------------------
+
     //server sends something to all clients (just client 0)
-    cward_send.send_to_all(&TestClientward::HelloToClient);
+    assert_eq!(
+        cward_send.send_to_all(&TestClientward::HelloToClient),
+        1, //one client gets the message
+    );
+    
+    // client receives the message
     assert_eq!(
         cward_recv.recv_blocking().unwrap(),
         TestClientward::HelloToClient,
     );
 
-    //client successfully sends a message toward server, which server receives annotated with cid 0
+    //--------------------------------------------------------------------------
+
+    //client successfully sends a message toward server,
+    //which server receives annotated with cid 0
     assert!(sward_send.send(&TestServerward::HelloToServer));
     assert_eq!(
         sward_recv.recv_blocking().unwrap(),
         Signed(TestServerward::HelloToServer, ClientId(0)),
     );
 
-    //server sends messages to clients 1,2,3. 
-    let seq = vec![ClientId(1), ClientId(2), ClientId(3)];
-    // 0 of the messages are send successfully
+    //--------------------------------------------------------------------------
+
+    //server sends messages to clients 1,2 and 1 again. 
+    let seq = vec![ClientId(1), ClientId(2), ClientId(1)];
     assert_eq!(
         cward_send.send_to_sequence(&TestClientward::HelloToClient, seq.iter()),
-        0,
+        0, //zero of the messages are sent successfully
     );
 
     //Client0 doesn't receive it

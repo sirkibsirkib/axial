@@ -36,10 +36,6 @@ where
 M: Message {
     pub fn new(msg: M, signature: ClientId) -> Self {
         Signed(msg, signature)
-        // Signed {
-        //     msg: msg,
-        //     signature: signature,
-        // }
     }
 }
 
@@ -109,7 +105,7 @@ where C: Clientward, S: Serverward + 'static {
     pub fn kick(&mut self, cid: ClientId) -> bool {
         self.streams.update();
         if self.dead {return false}
-        if self.streams.get_mut().contains_key(&cid) {
+        if self.streams.contains_key(&cid) {
             self.w.apply_change(StateChange::Leave(cid));
             true
         } else {
@@ -119,7 +115,7 @@ where C: Clientward, S: Serverward + 'static {
 
     fn shutdown_wrapper(&mut self) {
         self.streams.update();
-        for stream in self.streams.get_mut().iter_mut() {
+        for stream in self.streams.iter_mut() {
             let _ = stream.1.shutdown(::std::net::Shutdown::Both); //TODO
         }
         self.dead = true;
@@ -132,13 +128,13 @@ where C: Clientward, S: Serverward + 'static {
     pub fn connected_clients(&mut self) -> HashSet<ClientId> {
         if self.dead {return HashSet::new()}
         self.streams.update();
-        self.streams.get_mut().keys().map(|x| *x).collect()
+        self.streams.keys().map(|x| *x).collect()
     }
 
     pub fn client_is_connected(&mut self, cid: ClientId) -> bool {
         if self.dead {return false}
         self.streams.update();
-        self.streams.get_mut().contains_key(&cid)
+        self.streams.contains_key(&cid)
     }
 }
 impl<C,S> Drop for ServerControl<C,S>
@@ -162,7 +158,7 @@ where
 C: Clientward {
     fn send_to(&mut self, msg: &C, cid: ClientId) -> bool {
         self.streams.update();
-        if let Some(stream) = self.streams.get_mut().get_mut(&cid) {
+        if let Some(stream) = self.streams.get_mut(&cid) {
             stream.single_write(&msg).is_ok()
         } else {
             false
@@ -173,10 +169,10 @@ C: Clientward {
     where I: Iterator<Item = &'a ClientId> {
         let bytes = bincode::serialize(msg, bincode::Infinite).expect("went kk lel");
         self.streams.update();
-        let borrow = self.streams.get_mut();
+        // let borrow = &*self.streams;
         let mut successes = 0;
         for cid in cids {
-            if let Some(stream) = borrow.get_mut(cid) {
+            if let Some(stream) = self.streams.get_mut(cid) {
                 if stream.single_write_bytes(&bytes).is_ok() {
                     successes += 1;
                 }
@@ -189,7 +185,7 @@ C: Clientward {
         let bytes = bincode::serialize(msg, bincode::Infinite).expect("went kk lel");
         self.streams.update();
         let mut successes = 0;
-        for stream in self.streams.get_mut().values_mut() {
+        for stream in self.streams.values_mut() {
             if stream.single_write_bytes(&bytes).is_ok() {
                 successes += 1;
             }
@@ -199,7 +195,7 @@ C: Clientward {
 
     
     fn online_clients(&mut self) -> HashSet<ClientId> {
-        self.streams.get_mut().keys().map(|x| *x).collect()
+        self.streams.keys().map(|x| *x).collect()
     }
 }
 
@@ -302,7 +298,7 @@ where
         let reply = match auth.try_authenticate(&user, &pass) {
             Ok(cid) => {
                 r.update();
-                if r.get_mut().contains_key(&cid) {
+                if r.contains_key(&cid) {
                     MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
                 } else {
                     w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
