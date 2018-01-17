@@ -1,10 +1,22 @@
-
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
 use magnetic::Consumer;
 use std::marker::PhantomData;
 use magnetic::{PopError, TryPopError};
-// use std::collections::HashSet;
+use crypto_hash::{Algorithm,Hasher};
+use std::io::Write;
+
+
+// macro_rules! debug_println {
+//     ($lit:expr, $e:expr) => {{ println!($lit, $e); }};
+//     ($e:expr) => {{ println!("{:?}", $e); }};
+// }
+
+
+macro_rules! debug_println {
+    ($lit:expr, $e:expr) => ();
+    ($e:expr) => ();
+}
 
 pub trait Message: Serialize + DeserializeOwned + Clone {}
 pub trait Serverward: Message {}
@@ -14,8 +26,7 @@ pub trait Clientward: Message {}
 pub struct ClientId(pub u32);
 
 pub trait Authenticator: Send {
-    fn try_authenticate(&mut self, user: &str, pass: &str)
-     -> Result<ClientId, AuthenticationError>;
+    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, &str)>;
 }
 
 
@@ -23,7 +34,7 @@ pub trait Authenticator: Send {
 pub enum AuthenticationError {
     AlreadyLoggedIn,
     UnknownUsername,
-    PasswordMismatch,
+    ChallengeFailed,
 }
 
 pub struct Receiver<C,M>
@@ -49,7 +60,8 @@ where C: Consumer<M>, M: Message {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MetaServerward {
-    LoginRequest(String, String),
+    LoginRequest(String),
+    ChallengeAnswer(Vec<u8>),
 }
 impl Message for MetaServerward {}
 impl Serverward for MetaServerward {}
@@ -58,6 +70,9 @@ impl Serverward for MetaServerward {}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MetaClientward {
     LoginAcceptance(ClientId),
+    ChallengeQuestion(Vec<u8>),
+    HandshakeTimeout,
+    ClientMisbehaved,
     AuthenticationError(AuthenticationError),
     ClientThresholdReached,
 }
@@ -69,3 +84,9 @@ where C: Consumer<M>, M: Message {
     Receiver {consumer: consumer, _phantom: PhantomData::default()}
 }
 
+pub fn secret_challenge_hash(secret: &str, challenge: &Vec<u8>) -> Vec<u8> {
+    let mut hasher = Hasher::new(Algorithm::SHA256);
+    hasher.write_all(secret.as_bytes()).expect("hash1!");
+    hasher.write_all(challenge).expect("hash2!");
+    hasher.finish()
+}

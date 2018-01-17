@@ -1,0 +1,21 @@
+C# client
+S# server
+A# authenticator
+K[x]# secret for client x 
+R# random num
+H[x]# hash of string x
+x+y# concatenation of x and y
+I# client ID
+
+            ##
+client-side ## server-side
+____________##________________________________________   
+C           ##          S                         A    
++----login(C)---->      |                         |
+|           ##          |                         |
+|  <---question(R)------+--get_secret_for(C)--->  |
+|           ##          |   <----------S(C)-------+
+|--answer(H[S[C]+R])--> |                         |
+|           ##          |                         |
+|   <---welcome(I)------|                         |
+            ##

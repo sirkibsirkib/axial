@@ -30,17 +30,13 @@ impl TestAuthenticator {
     }
 }
 impl Authenticator for TestAuthenticator {
-    fn try_authenticate(&mut self, user: &str, pass: &str) -> Result<ClientId, AuthenticationError> {
+    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, &str)> {
         if let Some(cid) = self.users.get_by_second(user) {
-            if self.passwords.get(cid).unwrap() == pass {
-                Ok(*cid)
-            } else {
-                Err(AuthenticationError::PasswordMismatch)
-            }
+            Some((*cid, self.passwords.get(cid).unwrap()))
         } else {
-            Err(AuthenticationError::UnknownUsername)
+            None
         }
-     }
+    }
 }
 
 fn test_auth() -> TestAuthenticator {
@@ -68,7 +64,7 @@ impl Serverward for TestServerward {}
 
 
 
-///////////////////////////////// TESTS ////////////////////////////////////////
+// ///////////////////////////////// TESTS ////////////////////////////////////////
 
 #[test]
 fn server_bind() {
@@ -132,7 +128,7 @@ fn client_password_mismatch() {
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_PASS", None)
     .err().expect("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
-    assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::PasswordMismatch));
+    assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::ChallengeFailed));
 }
 
 #[test]

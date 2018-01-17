@@ -5,7 +5,10 @@ use std::thread;
 use std::net::{TcpStream, TcpListener};
 use std::marker::PhantomData;
 use std::io;
+use std::time::Duration;
 use std::sync::Arc;
+use rand;
+use rand::Rng;
 
 extern crate trailing_cell;
 use self::trailing_cell::{TakesMessage,TcReader,TcWriter};
@@ -16,8 +19,6 @@ use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
 
 use common::*;
 use messaging::*;
-
-
 
 
 pub trait ClientwardSender<C: Clientward> {
@@ -169,7 +170,6 @@ C: Clientward {
     where I: Iterator<Item = &'a ClientId> {
         let bytes = bincode::serialize(msg, bincode::Infinite).expect("went kk lel");
         self.streams.update();
-        // let borrow = &*self.streams;
         let mut successes = 0;
         for cid in cids {
             if let Some(stream) = self.streams.get_mut(cid) {
@@ -288,29 +288,78 @@ S: Serverward + 'static, {
 
 ////////////////////////////// AUX FUNCTIONS ///////////////////////////////////
 
+lazy_static! {
+    static ref ANSWER_DUR: Duration = Duration::from_millis(2000);
+}
+
 fn server_handshake<A>(auth: &mut A, stream: &mut TcpStream,
-                       acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>,
+                       mut acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>,
                        r: &mut TrailingStreams) -> Option<ClientId>
 where
-    A: Authenticator, {
+    A: Authenticator
+{
     let mut accepted: Option<ClientId> = None;
-    if let Ok(MetaServerward::LoginRequest(user, pass)) = stream.single_read(acceptor_buffer) {
-        let reply = match auth.try_authenticate(&user, &pass) {
-            Ok(cid) => {
-                r.update();
-                if r.contains_key(&cid) {
-                    MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
+    r.update();
+    if let Ok(MetaServerward::LoginRequest(user)) = stream.single_read(acceptor_buffer) {
+        if let Some((cid, secret)) = auth.identity_and_secret(&user) {
+            debug_println!("got cid, secret from auth");
+            let challenge: Vec<u8> = random_challenge();
+            if stream.single_write(& MetaClientward::ChallengeQuestion(challenge.clone())).is_ok() {
+                debug_println!("sent challenge OK");
+                if let Ok(answer) = stream.single_timout_silence_read(&mut acceptor_buffer, *ANSWER_DUR) {
+                    debug_println!("got challenge response OK");
+                    if let MetaServerward::ChallengeAnswer(ans) = answer {
+                        debug_println!("challenge response is correct type OK");
+                        if secret_challenge_hash(secret, &challenge) == ans {
+                            debug_println!("answer was correct! OK");
+                            if ! r.contains_key(&cid) {
+                                debug_println!("not already logged in. YAY");
+                                w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
+                                if stream.single_write(& MetaClientward::LoginAcceptance(cid)).is_ok() {
+                                    accepted = Some(cid);
+                                }
+                            } else {
+                                debug_println!("D: already logged in");
+                                let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn));
+                            }
+                        } else {
+                            debug_println!("D: challenge failed");
+                            let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::ChallengeFailed));
+                        }
+                    } else {
+                        debug_println!("D: challenge response bad type");
+                        let _ = stream.single_write(& MetaClientward::ClientMisbehaved);
+                    }
                 } else {
-                    w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
-                    accepted = Some(cid);
-                    MetaClientward::LoginAcceptance(cid)
+                    debug_println!("D: timeout on challenge reply");
+                    let _ = stream.single_write(& MetaClientward::HandshakeTimeout);
                 }
-            },
-            Err(e) => MetaClientward::AuthenticationError(e),
+            } else {
+                debug_println!("D: failed to send challenge");
+            }
+        } else {
+            let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::UnknownUsername));
         };
-        if let Err(_) = stream.single_write(&reply) {
-            accepted = None;
-        }
+        // let reply = match auth.try_authenticate(&user, &pass) {
+        //     Ok(cid) => {
+        //         r.update();
+        //         if r.contains_key(&cid) {
+        //             MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
+        //         } else {
+        //             w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
+        //             accepted = Some(cid);
+        //             MetaClientward::LoginAcceptance(cid)
+        //         }
+        //     },
+        //     Err(e) => MetaClientward::AuthenticationError(e),
+        // };
+        // if let Err(_) = stream.single_write(&reply) {
+        //     accepted = None;
+        // }
     }
     accepted
+}
+
+fn random_challenge() -> Vec<u8> {
+    (0..15).map(|_| rand::thread_rng().gen()).collect()
 }
