@@ -26,7 +26,7 @@ pub trait Clientward: Message {}
 pub struct ClientId(pub u32);
 
 pub trait Authenticator: Send {
-    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, &str)>;
+    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)>;
 }
 
 

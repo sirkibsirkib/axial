@@ -30,9 +30,9 @@ impl TestAuthenticator {
     }
 }
 impl Authenticator for TestAuthenticator {
-    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, &str)> {
+    fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)> {
         if let Some(cid) = self.users.get_by_second(user) {
-            Some((*cid, self.passwords.get(cid).unwrap()))
+            Some((*cid, self.passwords.get(cid).unwrap().to_owned()))
         } else {
             None
         }
@@ -45,6 +45,16 @@ fn test_auth() -> TestAuthenticator {
     auth.add_user("bob", "bob_pass");
     auth.add_user("charlie", "charlie_pass");
     auth
+}
+
+
+
+fn test_password_auth() -> authenticators::PasswordAuth {
+    authenticators::PasswordAuth::new_from_vec(
+        vec![("alice".to_owned(),   "alice_pass".to_owned()),
+             ("bob".to_owned(),     "bob_pass".to_owned()),
+             ("charlie".to_owned(), "charlie_pass".to_owned())]
+    )
 }
 
 
@@ -175,6 +185,7 @@ fn two_clients() {
     assert_eq!(cid, ClientId(1));
 }
 
+
 #[test]
 fn server_send() {
     let mut auth = test_auth();
@@ -279,6 +290,28 @@ fn fine_server_control() {
     // bob gets accepted now that the server is listening
     client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
     .expect("bob was expecting to be authenticated!");
+}
+
+#[test]
+fn two_clients_password_auth() {
+    let mut auth = test_password_auth();
+    let addr = "127.0.0.1:5565";
+    //start server
+    let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
+    .expect("server start failed");
+    
+    //start a new thread to listen for the server endlessly
+    thread::spawn(move || cntl.accept_all(&mut auth) );
+    
+    //start client 0
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    .expect("alice failed to join");
+    assert_eq!(cid, ClientId(0));
+
+    //start client 1
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    .expect("bob failed to join");
+    assert_eq!(cid, ClientId(1));
 }
 
 #[test]

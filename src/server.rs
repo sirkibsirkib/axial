@@ -303,7 +303,7 @@ where
     let mut accepted: Option<ClientId> = None;
     r.update();
     if let Ok(MetaServerward::LoginRequest(user)) = stream.single_read(acceptor_buffer) {
-        if let Some((cid, secret)) = auth.identity_and_secret(&user) {
+        if let Some((cid, ref secret)) = auth.identity_and_secret(&user) {
             debug_println!("answer was correct! OK");
             for _ in 0..3 {
                 // send the client challenge questions, receive answers

@@ -7,6 +7,8 @@ connection. At each endpoint, a writer and reader of upstream and downstream
 
 ## Purpose
 
+
+
 SChannel allows for simplified asynchronous 1-server-N-client systems.
 
 SChannel is inspired by works such as `Tokio` and `mio` beneath it. However,

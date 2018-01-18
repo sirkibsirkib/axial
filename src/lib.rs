@@ -14,6 +14,7 @@ mod server;
 mod client;
 mod messaging;
 mod coupler;
+pub mod authenticators;
 
 #[cfg(test)]
 mod tests;

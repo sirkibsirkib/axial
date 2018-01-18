@@ -15,7 +15,6 @@ bidir-map = "1.0.0"
 rand = "0.4"
 lazy_static = "1.0.0"
 
-
 # TODO
 # clean up unwraps()
 # clean up silly expect() messages
