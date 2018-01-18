@@ -20,6 +20,8 @@ use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
 use common::*;
 use messaging::*;
 
+pub const MAX_CLIENT_CHALLENGES: u8 = 3; 
+
 
 pub trait ClientwardSender<C: Clientward> {
     fn send_to(&mut self, &C, ClientId) -> bool;
@@ -293,7 +295,7 @@ lazy_static! {
 }
 
 fn server_handshake<A>(auth: &mut A, stream: &mut TcpStream,
-                       mut acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>,
+                       acceptor_buffer: &mut [u8], w: &mut TcWriter<StateChange>,
                        r: &mut TrailingStreams) -> Option<ClientId>
 where
     A: Authenticator
@@ -302,62 +304,60 @@ where
     r.update();
     if let Ok(MetaServerward::LoginRequest(user)) = stream.single_read(acceptor_buffer) {
         if let Some((cid, secret)) = auth.identity_and_secret(&user) {
-            debug_println!("got cid, secret from auth");
-            let challenge: Vec<u8> = random_challenge();
-            if stream.single_write(& MetaClientward::ChallengeQuestion(challenge.clone())).is_ok() {
-                debug_println!("sent challenge OK");
-                if let Ok(answer) = stream.single_timout_silence_read(&mut acceptor_buffer, *ANSWER_DUR) {
-                    debug_println!("got challenge response OK");
-                    if let MetaServerward::ChallengeAnswer(ans) = answer {
-                        debug_println!("challenge response is correct type OK");
-                        if secret_challenge_hash(secret, &challenge) == ans {
-                            debug_println!("answer was correct! OK");
-                            if ! r.contains_key(&cid) {
-                                debug_println!("not already logged in. YAY");
-                                w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
-                                if stream.single_write(& MetaClientward::LoginAcceptance(cid)).is_ok() {
-                                    accepted = Some(cid);
-                                }
-                            } else {
-                                debug_println!("D: already logged in");
-                                let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn));
-                            }
-                        } else {
-                            debug_println!("D: challenge failed");
-                            let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::ChallengeFailed));
-                        }
-                    } else {
-                        debug_println!("D: challenge response bad type");
-                        let _ = stream.single_write(& MetaClientward::ClientMisbehaved);
-                    }
-                } else {
-                    debug_println!("D: timeout on challenge reply");
-                    let _ = stream.single_write(& MetaClientward::HandshakeTimeout);
+            debug_println!("answer was correct! OK");
+            for _ in 0..3 {
+                // send the client challenge questions, receive answers
+                if !challenge_client(stream, acceptor_buffer, secret) { return None }
+            }
+            if ! r.contains_key(&cid) {
+                debug_println!("not already logged in. YAY");
+                w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
+                if stream.single_write(& MetaClientward::LoginAcceptance(cid)).is_ok() {
+                    accepted = Some(cid);
                 }
             } else {
-                debug_println!("D: failed to send challenge");
+                debug_println!("D: already logged in");
+                let _ = stream.single_write(
+                    & MetaClientward::AuthenticationError(
+                        AuthenticationError::AlreadyLoggedIn));
             }
         } else {
-            let _ = stream.single_write(& MetaClientward::AuthenticationError(AuthenticationError::UnknownUsername));
+            let _ = stream.single_write(
+                & MetaClientward::AuthenticationError(
+                    AuthenticationError::UnknownUsername));
         };
-        // let reply = match auth.try_authenticate(&user, &pass) {
-        //     Ok(cid) => {
-        //         r.update();
-        //         if r.contains_key(&cid) {
-        //             MetaClientward::AuthenticationError(AuthenticationError::AlreadyLoggedIn)
-        //         } else {
-        //             w.apply_change(StateChange::Join(cid, stream.try_clone().unwrap())); //TODO
-        //             accepted = Some(cid);
-        //             MetaClientward::LoginAcceptance(cid)
-        //         }
-        //     },
-        //     Err(e) => MetaClientward::AuthenticationError(e),
-        // };
-        // if let Err(_) = stream.single_write(&reply) {
-        //     accepted = None;
-        // }
     }
     accepted
+}
+
+fn challenge_client(stream: &mut TcpStream, buf: &mut [u8], secret: &str) -> bool {
+    let challenge: Vec<u8> = random_challenge();
+    if stream.single_write(& MetaClientward::ChallengeQuestion(challenge.clone())).is_ok() {
+        debug_println!("sent challenge OK");
+        if let Ok(answer) = stream.single_timout_silence_read(buf, *ANSWER_DUR) {
+            debug_println!("got challenge response OK");
+            if let MetaServerward::ChallengeAnswer(ans) = answer {
+                debug_println!("challenge response is correct type OK");
+                if secret_challenge_hash(secret, &challenge) == ans {
+                    return true;
+                } else {
+                    debug_println!("D: challenge failed");
+                    let _ = stream.single_write(
+                        & MetaClientward::AuthenticationError(
+                            AuthenticationError::ChallengeFailed));
+                }
+            } else {
+                debug_println!("D: challenge response bad type");
+                let _ = stream.single_write(& MetaClientward::ClientMisbehaved);
+            }
+        } else {
+            debug_println!("D: timeout on challenge reply");
+            let _ = stream.single_write(& MetaClientward::HandshakeTimeout);
+        }
+    } else {
+        debug_println!("D: failed to send challenge");
+    }
+    false
 }
 
 fn random_challenge() -> Vec<u8> {
