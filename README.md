@@ -34,42 +34,6 @@ for a multiplayer game. Clients send requests for game data OR player actions
 as they are generated/needed. The server responds to these requests and pushes
 game update messages.
 
-## Security
-To authenticate a newcomer client, sc-entral participants use the following
-protocol:
-
-```java
-S[x]    secret of client x  | I[x]  | client id for client x
-R       random number       | X+Y  concatenation of x and y
-H[x(]   hash of string x    | 
-
-   client-side  ~  server-side
-=============== ~ ========================================
- Client c       ~        Server               Authenticator    
-    |------login(c)----->   |                         |
-    |           ~           |                         |
-    |  <---question(R)------|--get_secret_for(c)--->  |
-    |\          ~           |                        /|
-    | `-answer(H[S[c]+R])-> |   <----------S[c]-----` |
-    |           ~           |---cmp-.                 |
-    |           ~           |       |                 :
-    |           ~           |  <----`
-    |  <--accept(I[c])-----OR      
-    |           ~         / |    
-    |  <---reject()------`  |
-    :           ~           :
-``` 
-__Note:__ The (question, answer) step is repeated 3 times. This is
-omitted for brevity.
-
-It is important to note that a client `secret` ie. `S[C]` is never sent over the line 
-'in the clear'. Nevertheless, note that __secret != password__. The client
-secret is privy information that _the server knows_. Thus, it would be more
-suitable for the secret to be some salted hash of the client's true password.
-When the server is trusted, then it is OK for the password itself to be a secret.
-
-This protocol does not protect you from MitM attacks. 
-
 
 ## Using It Yourself
 1. On both server and client side, mark your serializable message
@@ -98,6 +62,44 @@ client connections. You can even re-use the same `Authenticator` object.
 1. Messages are marked with their own identity:
 Create a new `enum`, with variants for each type of message you'd like. Make
 this enum your `Serverward` message type. 
+
+
+## Security
+To authenticate a newcomer client, participants adhere to the following
+protocol:
+
+```java
+S[x]    secret of client x  | I[x]  | client id for client x
+R       random number       | X+Y  concatenation of x and y
+H[x(]   hash of string x    | 
+
+   client-side  ~  server-side
+=============== ~ ========================================
+ Client c       ~        Server               Authenticator    
+    |------login(c)----->   |                         |
+    |           ~           |                         |
+    |  <---question(R)------|--get_secret_for(c)--->  |
+    |\          ~           |                        /|
+    | `-answer(H[S[c]+R])-> |   <----------S[c]-----` |
+    |           ~           |---cmp-.                 |
+    |           ~           |       |                 :
+    |           ~           |  <----`
+    |  <--accept(I[c])-----OR      
+    |           ~         / |    
+    |  <---reject()------`  |
+    :           ~           :
+``` 
+__Note:__ The (question, answer) step is repeated 3 times. This is
+omitted for brevity.
+
+It is important to note that a client `secret` ie. `S[c]` is never sent over the line 
+'in the clear'. Nevertheless, note that __secret != password__. The client
+secret is privy information that _the server knows_. Thus, it would be more
+suitable for the secret to be some salted hash of the client's true password.
+When the server is trusted, then it is OK if secret == password.
+
+This protocol does not protect you from MitM attacks. 
+
 
 ## Examples
 See `tests.rs` in the repo for some annotated examples.
