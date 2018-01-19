@@ -97,4 +97,4 @@ This protocol does not protect you from MitM attacks.
 
 
 ## Examples
-(See `tests.rs` in the repo for some annotated examples.](https://github.com/sirkibsirkib/axial/blob/master/src/tests.rs)
+[See `tests.rs` in the repo for some annotated examples.](https://github.com/sirkibsirkib/axial/blob/master/src/tests.rs)
