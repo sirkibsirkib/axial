@@ -1,7 +1,6 @@
 Axial
 ====
 
-## Purpose
 Axial provides a channel-like abstraction over single-server distributed
 systems. It shines in the case of _users_ that persist over _sessions_.
 Axial abstracts away the details of:
@@ -23,7 +22,7 @@ Client1 S|--------->| |---|S
 ```
 
 On the server-side, the server _identifies_ and _authenticates_ incoming
-client connections with an `Authenticator`* component, and performs a secure
+client connections with an `Authenticator`* object, and performs a secure
 handshake before accepting a newcomer.
 
 Elements above marked with an asterisk (*) potentially have behaviours defined
