@@ -1,5 +1,5 @@
 [package]
-name = "sc-urvy"
+name = "axial"
 version = "0.1.0"
 authors = ["sirkibsirkib <christopher.esterhuyse@gmail.com>"]
 
@@ -14,12 +14,3 @@ crypto-hash = "0.3.0"
 bidir-map = "1.0.0"
 rand = "0.4"
 lazy_static = "1.0.0"
-
-# TODO
-# clean up unwraps()
-# clean up silly expect() messages
-# test speed?
-# minimize API
-# write docs
-# spell check docs
-# impl server kick
