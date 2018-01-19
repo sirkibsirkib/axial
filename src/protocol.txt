@@ -1,21 +1,23 @@
-C# client
-S# server
-A# authenticator
-K[x]# secret for client x 
-R# random num
-H[x]# hash of string x
-x+y# concatenation of x and y
-I# client ID
+```java
+K[x]    secret of client x 
+R       random number
+H[x(]    hash of string x
+X+Y     concatenation of x and y
+I       client id
 
-            ##
-client-side ## server-side
-____________##________________________________________   
-C           ##          S                         A    
-+----login(C)---->      |                         |
-|           ##          |                         |
-|  <---question(R)------+--get_secret_for(C)--->  |
-|           ##          |   <----------S(C)-------+
-|--answer(H[S[C]+R])--> |                         |
-|           ##          |                         |
-|   <---welcome(I)------|                         |
-            ##
+   client-side  ##  server-side
+________________##__________________________________________
+ Client         ##        Server               Authenticator    
+    |------login(C)----->   |                         |
+    |           ##          |                         |
+    |  <---question(R)------+--get_secret_for(C)--->  |
+    |\          ##          |                        /|
+    | `-answer(H[S[C]+R])-> |   <----------S(C)-----` |
+    |           ##          |---cmp-.                 |
+    |           ##          |       |                 :
+    |           ##          |  <----`
+    |  <---accept(I)-------OR      
+    |           ##        / |    
+    |  <---reject()------`  |
+    :           ##          :
+```    

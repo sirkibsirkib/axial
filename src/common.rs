@@ -37,15 +37,16 @@ pub enum AuthenticationError {
     ChallengeFailed,
 }
 
-pub struct Receiver<C,M>
+/// The Receiver object for some node in the system, server or client.
+/// 
+pub struct Receiver<M>
 where
-C: Consumer<M>,
 M: Message {
-    consumer: C,
+    consumer: Consumer<M>,
     _phantom: PhantomData<M>,
 }
-impl<C,M> Receiver<C,M> 
-where C: Consumer<M>, M: Message {
+impl<M> Receiver<M> 
+where M: Message {
     pub fn recv_blocking(&mut self) -> Result<M, PopError> {
         self.consumer.pop()
     }
@@ -79,8 +80,8 @@ pub enum MetaClientward {
 impl Message for MetaClientward {}
 impl Clientward for MetaClientward {}
 
-pub fn new_receiver<C,M>(consumer: C) -> Receiver<C,M>
-where C: Consumer<M>, M: Message {
+pub fn new_receiver<M>(consumer: Consumer<M>) -> Receiver<M>
+where M: Message {
     Receiver {consumer: consumer, _phantom: PhantomData::default()}
 }
 

@@ -74,4 +74,3 @@ impl Authenticator for PasswordAuth {
         self.map.get(user).map(|x| x.to_owned())
     }
 }
-
