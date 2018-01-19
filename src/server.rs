@@ -23,6 +23,8 @@ use messaging::*;
 pub const MAX_CLIENT_CHALLENGES: u8 = 3; 
 
 
+//////////////////////////// RETURN TYPES & API ////////////////////////////////
+
 pub trait ClientwardSender<C: Clientward> {
     fn send_to(&mut self, &C, ClientId) -> bool;
     fn send_to_sequence<'a, I>(&mut self, &C, I) -> u32 where I: Iterator<Item = &'a ClientId>;
@@ -30,22 +32,17 @@ pub trait ClientwardSender<C: Clientward> {
     fn online_clients(&mut self) -> HashSet<ClientId>;
 }
 
-
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Signed<M>(pub M, pub ClientId);
 impl<M> Message for Signed<M> where M: Message {}
-impl<M> Signed<M>
-where
-M: Message {
+impl<M> Signed<M> where M: Message {
     pub fn new(msg: M, signature: ClientId) -> Self {
         Signed(msg, signature)
     }
 }
 
 pub struct ServerControl<C,S>
-where
-C: Clientward,
-S: Serverward + 'static {
+where C: Clientward, S: Serverward, {
     w: TcWriter<StateChange>,
     streams: TrailingStreams,
     dead: bool,
@@ -55,7 +52,7 @@ S: Serverward + 'static {
     producer: Arc<MPSCProducer<Signed<S>, DynamicBuffer<Signed<S>>>>,
 }
 impl<C,S> ServerControl<C,S>
-where C: Clientward, S: Serverward + 'static {
+where C: Clientward, S: Serverward, {
     fn new(w: TcWriter<StateChange>, listener: TcpListener, producer: Arc<MPSCProducer<Signed<S>, DynamicBuffer<Signed<S>>>>) -> Self {
         let r = w.add_reader(HashMap::new());
         ServerControl {
@@ -85,16 +82,13 @@ where C: Clientward, S: Serverward + 'static {
                 let mut stream_clone = stream.try_clone().unwrap();
                 let mut a_p_clone = self.producer.clone();
                 thread::spawn(move || {
-                    //fwder thread
-                    let mut buffer = [0u8; 1024];
-                    //pulls messages off the line, PRODUCES them
+                    // forwarder thread. Dies when socket dies
+                    let mut buffer = [0u8; 512]; //incoming messages aren't that big
                     while let Ok(msg) = stream_clone.single_read(&mut buffer) {
                         if let Err(_) = a_p_clone.push(Signed::new(msg, cid)) {
-                            // write to queue failed
-                            return; // listener 
+                            return;
                         }
                     }
-                    // socket closed!
                 });
                 Some(cid)
             } else {
@@ -116,7 +110,7 @@ where C: Clientward, S: Serverward + 'static {
         }
     }
 
-    fn shutdown_wrapper(&mut self) {
+    fn shutdown_wrapper(&mut self) { //PRIVATE
         self.streams.update();
         for stream in self.streams.iter_mut() {
             let _ = stream.1.shutdown(::std::net::Shutdown::Both); //TODO
@@ -143,7 +137,7 @@ where C: Clientward, S: Serverward + 'static {
 impl<C,S> Drop for ServerControl<C,S>
 where
 C: Clientward,
-S: Serverward + 'static {
+S: Serverward, {
     fn drop(&mut self) {
         self.shutdown_wrapper();
     }
@@ -194,7 +188,6 @@ C: Clientward {
         }
         successes
     }
-
     
     fn online_clients(&mut self) -> HashSet<ClientId> {
         self.streams.keys().map(|x| *x).collect()
@@ -260,7 +253,7 @@ impl Clone for StateChange {
 
 type ServRes<C,S> = (
     RemoteClientwardSender<C>,
-    Receiver<MPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
+    Receiver<Signed<S>>,
     ServerControl<C,S>,
 );
 
@@ -269,7 +262,7 @@ pub fn server_start<A,C,S>(addr: A)
 where
 A: ToSocketAddrs,
 C: Clientward,
-S: Serverward + 'static, {
+S: Serverward, {
     // create TcpListener
     let listener = TcpListener::bind(addr)?;
     let (p, c) : MpscPair<Signed<S>> = mpsc_queue(DynamicBuffer::new(128).unwrap());

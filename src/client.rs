@@ -12,7 +12,6 @@ use magnetic::spsc::{SPSCConsumer,SPSCProducer,spsc_queue};
 use messaging::*;
 use common::*;
 
-type SpscPair<S> = (SPSCProducer<S, DynamicBuffer<S>>, SPSCConsumer<S, DynamicBuffer<S>>);
 
 //////////////////////////// RETURN TYPES & API ////////////////////////////////
 
@@ -34,7 +33,6 @@ where S: Serverward {
 
     fn shutdown(self) {
         let _ = self.stream.shutdown(::std::net::Shutdown::Both); //TODO
-        drop(self);
     }
 }
 
@@ -55,25 +53,18 @@ pub enum ClientStartError {
 }
 impl From<io::Error> for ClientStartError {
     #[inline]
-    fn from(_: io::Error) -> Self {
-        ClientStartError::ConnectFailed
-    }
+    fn from(_: io::Error) -> Self { ClientStartError::ConnectFailed }
 }
 impl From<MessageError> for ClientStartError {
     #[inline]
-    fn from(_: MessageError) -> Self {
-        ClientStartError::ConnectFailed
-    }
+    fn from(_: MessageError) -> Self { ClientStartError::ConnectFailed }
 }
-
-
-
 
 fn client_connect<T: ToSocketAddrs>(addr: T, connect_timeout: Option<Duration>) -> Result<TcpStream, ClientStartError> {
     match connect_timeout {
         Some(duration) => {
             for a in addr.to_socket_addrs().unwrap()   {
-                let x = TcpStream::connect_timeout(&a, duration)?;
+                let x = TcpStream::connect_timeout(&a, duration) ?;
                 return Ok(x);
             }
             Err(ClientStartError::ConnectFailed)
@@ -86,32 +77,35 @@ fn client_connect<T: ToSocketAddrs>(addr: T, connect_timeout: Option<Duration>) 
 
 ///////////////////////////// FUNCTIONS ////////////////////////////////////////
 
-
-///////////////////////////// FUNCTIONS ////////////////////////////////////////
-
-type ClientResult<C,S> = (RemoteServerwardSender<S>, Receiver<SPSCConsumer<C,DynamicBuffer<C>>,C>, ClientId);
+type ClientResult<C,S> =
+Result<
+    (RemoteServerwardSender<S>, Receiver<C>, ClientId),
+    ClientStartError,
+>;
+type SpscPair<S> = (
+    SPSCProducer<S, DynamicBuffer<S>>,
+    SPSCConsumer<S, DynamicBuffer<S>>,
+);
 
 pub fn client_start<C,S,T>(addr: T, user: &str, secret: &str, connect_timeout: Option<Duration>)
--> Result<ClientResult<C,S>, ClientStartError>
+-> ClientResult<C,S>
 where
-    C: Clientward + 'static,
+    C: Clientward,
     S: Serverward, 
     T: ToSocketAddrs
 {
-    
     let mut stream = client_connect(addr, connect_timeout)?;
     let login_msg = MetaServerward::LoginRequest(user.to_owned());
     if stream.single_write(&login_msg).is_err() {
         return Err(ClientStartError::SocketMisbehaved);
     }
-    let mut lil_buffer = [0_u8; 64];
+    let mut lil_buffer = [0_u8; 128];
     let timeout = Duration::from_millis(500);
     use common::MetaClientward as MC;
 
     for _ in 0..(::server::MAX_CLIENT_CHALLENGES+1) {
         let response = stream.single_timout_silence_read::<MetaClientward>(&mut lil_buffer[..], timeout)?;
         if let MC::ChallengeQuestion(question) = response {
-            debug_println!("CLIENT got the question!");
             let ans = secret_challenge_hash(secret, &question);
             if ! stream.single_write(& MetaServerward::ChallengeAnswer(ans)).is_ok() {
                 return Err(ClientStartError::SocketMisbehaved);
@@ -130,25 +124,22 @@ where
     Err(ClientStartError::ServerMisbehaved)
 }
 
-fn login_acceptance<C,S>(stream: TcpStream, cid: ClientId) -> Result<ClientResult<C,S>, ClientStartError>
+fn login_acceptance<C,S>(stream: TcpStream, cid: ClientId) -> ClientResult<C,S>
 where
-    C: Clientward + 'static,
-    S: Serverward
+    C: Clientward,
+    S: Serverward,
 {
-    //server responded that login was successful! begin messaging
-    // start up ONE listener thread, give it the PRODUCER handle
-    // return CONSUMER handle + naked socket for writing
     let (p, c) : SpscPair<C> = spsc_queue(DynamicBuffer::new(128).unwrap());
     if let Ok(mut stream_clone) = stream.try_clone() {
         let _ = thread::spawn(move || {
-        let mut buffer = [0u8; 1024];
-        //pulls messages off the line, PRODUCES them
-        while let Ok(msg) = stream_clone.single_read(&mut buffer) {
-            if let Err(_) = p.push(msg) {
-                //failed to write to stream
-                return;
+            let mut buffer = [0u8; 2048]; //incoming messages can be big
+            //pulls messages off the line, PRODUCES them
+            while let Ok(msg) = stream_clone.single_read(&mut buffer) {
+                if let Err(_) = p.push(msg) {
+                    //failed to write to stream
+                    return;
+                }
             }
-        }
         });
         Ok((
             RemoteServerwardSender { stream: stream, _phantom: PhantomData::default() },
@@ -158,5 +149,4 @@ where
     } else {
         Err(ClientStartError::SocketMisbehaved)
     }
-    
 }

@@ -18,7 +18,7 @@ macro_rules! debug_println {
     ($e:expr) => ();
 }
 
-pub trait Message: Serialize + DeserializeOwned + Clone {}
+pub trait Message: Serialize + DeserializeOwned + Clone + 'static {}
 pub trait Serverward: Message {}
 pub trait Clientward: Message {}
 
@@ -42,8 +42,8 @@ pub enum AuthenticationError {
 pub struct Receiver<M>
 where
 M: Message {
-    consumer: Consumer<M>,
     _phantom: PhantomData<M>,
+    consumer: Box<Consumer<M>>,
 }
 impl<M> Receiver<M> 
 where M: Message {
@@ -80,9 +80,9 @@ pub enum MetaClientward {
 impl Message for MetaClientward {}
 impl Clientward for MetaClientward {}
 
-pub fn new_receiver<M>(consumer: Consumer<M>) -> Receiver<M>
-where M: Message {
-    Receiver {consumer: consumer, _phantom: PhantomData::default()}
+pub fn new_receiver<C, M>(consumer: C) -> Receiver<M>
+where C: Consumer<M> + 'static, M: Message {
+    Receiver {consumer: Box::new(consumer), _phantom: PhantomData::default()}
 }
 
 pub fn secret_challenge_hash(secret: &str, challenge: &Vec<u8>) -> Vec<u8> {

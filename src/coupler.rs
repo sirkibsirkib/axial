@@ -1,5 +1,5 @@
 use common::*;
-use magnetic::spsc::{SPSCProducer,SPSCConsumer};
+use magnetic::spsc::SPSCProducer;
 use magnetic::buffer::dynamic::DynamicBuffer;
 use std::collections::HashSet;
 use magnetic::Producer;
@@ -7,7 +7,6 @@ use server::Signed;
 use magnetic::spsc::spsc_queue;
 use server::ClientwardSender;
 use client::ServerwardSender;
-// use magnetic::spsc::SPSCConsumer;
 
 
 pub struct LocalClientwardSender<C: Clientward> {
@@ -71,9 +70,9 @@ where S: Serverward {
 pub fn coupler_start<C,S>(client_id: ClientId)
  -> (
         LocalClientwardSender<C>,
-        Receiver<SPSCConsumer<C, DynamicBuffer<C>>, C>,
+        Receiver<C>,
         LocalServerwardSender<S>,
-        Receiver<SPSCConsumer<Signed<S>, DynamicBuffer<Signed<S>>>, Signed<S>>,
+        Receiver<Signed<S>>,
     )
 where
 C: Clientward,

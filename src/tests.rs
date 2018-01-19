@@ -300,6 +300,7 @@ fn two_clients_password_auth() {
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
+    
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
