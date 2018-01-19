@@ -1,6 +1,7 @@
-# sc-hannel
+# sc-urvy
+
 ## Purpose
-sc-entral provides a channel-like abstraction over a centralized distributed
+sc-urvy provides a channel-like abstraction over a single-server distributed
 system. It shines in the case of _users_ that persist over _sessions_.
 The goal is to abstract away the details of:
 1. Newcomer client identification & authentication
@@ -9,15 +10,14 @@ The goal is to abstract away the details of:
 
 Each node in the system interacts with their peers via personal
 (Sender, Receiver) objects. Communication is done in terms of user-defined
-_structs_*, rather than bytes.
+_message objects_*.
 
 On the server-side, the server _identifies_ and _authenticates_ incoming
-client connections with an authenticator* component, and performs a secure
+client connections with an _authenticator_* component, and performs a secure
 handshake before accepting a newcomer.
 
-Details above marked with an asterisk (*) are _user-defined_ by trait
-implementations.
-
+Elements above marked with an asterisk (*) potentially have behaviours defined
+by the users' trait implementations.
 
 ```
 Client0 S|----.
