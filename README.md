@@ -9,15 +9,8 @@ The goal is to abstract away the details of:
 1. Server-side broadcast, multicast
 
 Each node in the system interacts with their peers via personal
-(Sender, Receiver) objects. Communication is done in terms of user-defined
-_message objects_*.
-
-On the server-side, the server _identifies_ and _authenticates_ incoming
-client connections with an _authenticator_* component, and performs a secure
-handshake before accepting a newcomer.
-
-Elements above marked with an asterisk (*) potentially have behaviours defined
-by the users' trait implementations.
+(`Sender`, `Receiver`) objects. Communication is done in terms of user-defined
+`Message`* objects.
 
 ```
 Client0 S|----.
@@ -27,6 +20,15 @@ Client0 S|----.
 Client1 S|--------->| |---|S
         R|<---------|/
 ```
+
+On the server-side, the server _identifies_ and _authenticates_ incoming
+client connections with an `Authenticator`* component, and performs a secure
+handshake before accepting a newcomer.
+
+Elements above marked with an asterisk (*) potentially have behaviours defined
+by the users' trait implementations.
+
+
 
 ## Usefulness
 The most obvious use case is that of a server-client architecture
