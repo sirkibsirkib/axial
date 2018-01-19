@@ -51,7 +51,10 @@ C: Clientward {
     }
 }
 
+/// This object implements ServerwardSender, but sends messages locally
+/// (producing them in memory for the Reader to consume)
 /// 
+/// This struct is created with `coupler_start`.
 pub struct LocalServerwardSender<S: Serverward> {
     my_cid: ClientId,
 	producer: SPSCProducer<Signed<S>, DynamicBuffer<Signed<S>>>
@@ -61,14 +64,20 @@ where S: Serverward {
     fn send(&mut self, msg: &S) -> bool {
         self.producer.push(Signed::new(msg.clone(), self.my_cid)).is_ok()
     }
-
-    fn shutdown(self) {
-        drop(self)
-    }
+    fn shutdown(self) { drop(self) }
 }
 
 ///////////////////////////// FUNCTIONS ////////////////////////////////////////
 
+/// The main function for creating both halves of a local server-client
+/// connection. This behaves exactly the same as a remote client and remote
+/// server created on the same machine, but circumvents the needless networking.
+/// 
+/// The function requires the CliendId to associate with the client half. As
+/// there can only be one client connected, this is provided from the start. It
+/// is presumed that the user ensures that this client is identified and 
+/// authenticated already as necessary. This function does NOT spawn any
+/// threads. 
 pub fn coupler_start<C,S>(client_id: ClientId)
  -> (
         LocalClientwardSender<C>,

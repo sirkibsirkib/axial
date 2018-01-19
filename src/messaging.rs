@@ -107,11 +107,3 @@ impl Messenger for TcpStream {
         Ok(())
     }
 }
-
-// fn bytes_to_hex(bytes : &[u8]) -> String {
-//     let mut s = String::new();
-//     for b in bytes {
-//         s.push_str(&format!("{:X}", b));
-//     }
-//     s
-// }

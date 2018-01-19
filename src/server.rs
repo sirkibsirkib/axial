@@ -10,12 +10,12 @@ use std::sync::Arc;
 use rand;
 use rand::Rng;
 
-extern crate trailing_cell;
-use self::trailing_cell::{TakesMessage,TcReader,TcWriter};
-
 use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer};
 use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
+
+extern crate trailing_cell;
+use self::trailing_cell::{TakesMessage,TcReader,TcWriter};
 
 use common::*;
 use messaging::*;
@@ -25,9 +25,17 @@ pub const MAX_CLIENT_CHALLENGES: u8 = 3;
 
 //////////////////////////// RETURN TYPES & API ////////////////////////////////
 
+/// This trait defines the API for any object that sends messages toward a
+/// server.
 pub trait ClientwardSender<C: Clientward> {
+
+    /// Send the given message to a specific client (blocking)
     fn send_to(&mut self, &C, ClientId) -> bool;
+
+    /// Send the given message to a sequence of clients defined by the given iterator
     fn send_to_sequence<'a, I>(&mut self, &C, I) -> u32 where I: Iterator<Item = &'a ClientId>;
+
+    /// Send the given message once to each client currently conneted
     fn send_to_all(&mut self, &C) -> u32;
     fn online_clients(&mut self) -> HashSet<ClientId>;
 }
