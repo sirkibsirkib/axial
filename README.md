@@ -64,24 +64,24 @@ protocol:
 
 ```
 S[x]    secret of client x  | I[x]  | client id for client x
-R       random number       | X+Y  concatenation of x and y
-H[x(]   hash of string x    | 
+R       random number       | x+y  concatenation of x and y
+H[x]    hash of string x    | 
 
-   client-side  ~  server-side
-=============== ~ ========================================
- Client c       ~        Server               Authenticator    
+   client-side  ::  server-side
+================::=========================================
+ Client c       ::       Server               Authenticator    
     |------login(c)----->   |                         |
-    |           ~           |                         |
+    |           ::          |                         |
     |  <---question(R)------|--get_secret_for(c)--->  |
-    |\          ~           |                        /|
-    | `-answer(H[S[c]+R])-> |   <----------S[c]-----` |
-    |           ~           |---cmp-.                 |
-    |           ~           |       |                 :
-    |           ~           |  <----`
+    |\          ::          |                        /|
+    | `-answer(H[S[c]+R])-> |   <----------S[c]-----´ |
+    |           ::          |---cmp-.                 |
+    |           ::          |       |                 :
+    |           ::          |  <----´
     |  <--accept(I[c])-----OR      
-    |           ~         / |    
-    |  <---reject()------`  |
-    :           ~           :
+    |           ::        / |    
+    |  <---reject()------´  |
+    :           ::          :
 ``` 
 __Note:__ The (question, answer) step is repeated 3 times. This is
 omitted for brevity.
