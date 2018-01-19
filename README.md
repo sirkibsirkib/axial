@@ -29,8 +29,10 @@ Client1 S|--------->| |---|S
 ```
 
 ## Usefulness
-The most obvious use case is that of a request-update server-client architecture
-for a multiplayer game. This takes advantage of the asynchronicity of the 
+The most obvious use case is that of a server-client architecture
+for a multiplayer game. Clients send requests for game data OR player actions
+as they are generated/needed. The server responds to these requests and pushes
+game update messages.
 
 ## Security
 To authenticate a newcomer client, sc-entral participants use the following
