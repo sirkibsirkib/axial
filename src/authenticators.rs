@@ -4,17 +4,30 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::collections::HashMap;
 
-/// weffewf
+/// Authenticator object that checks a directory for a file at runtime.
+/// Allows the server admin to change the userbase at runtime, as user data
+/// is never stored in memory.
 /// 
+/// Initialized with the path to the directory where it finds its user files.
+/// See `FilesPasswordAuth::new` for more information
 pub struct FilesPasswordAuth {
     folder: PathBuf,
 }
 
+/// Returns a new FilesPasswordAuth object.
+/// The path argument is where the authenticator will attempt to locate user files
+/// a user file for user <u> with ClientId <c> and secret <s> is defined as:
+///     a plaintext file named <u> (no extension), with contents: `<c>$<s>`
+///     for example: file 'alice' containing text '0$alice_secret'
 impl FilesPasswordAuth {
     pub fn new(path: &Path) -> Self {
         FilesPasswordAuth {
             folder: PathBuf::from(path),
         }
+    }
+
+    pub fn change_path(&mut self, new_path: &Path) {
+        self.folder = PathBuf::from(new_path);
     }
 }
 

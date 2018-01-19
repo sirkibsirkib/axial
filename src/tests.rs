@@ -9,30 +9,30 @@ use super::*;
 #[derive(Debug)]
 struct TestAuthenticator {
     users: BidirMap<ClientId, String>,
-    passwords: HashMap<ClientId, String>,
+    secretwords: HashMap<ClientId, String>,
     next_cid: ClientId,
 }
 impl TestAuthenticator {
     fn new() -> Self {
         TestAuthenticator {
             users: BidirMap::new(),
-            passwords: HashMap::new(),
+            secretwords: HashMap::new(),
             next_cid: ClientId(0),
         }
     }
 
-    fn add_user(&mut self, user: &str, pass: &str) -> ClientId {
+    fn add_user(&mut self, user: &str, secret: &str) -> ClientId {
         let cid = self.next_cid;
         self.next_cid = ClientId(cid.0 + 1);
         self.users.insert(cid, user.to_owned());
-        self.passwords.insert(cid, pass.to_owned());
+        self.secretwords.insert(cid, secret.to_owned());
         cid
     }
 }
 impl Authenticator for TestAuthenticator {
     fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)> {
         if let Some(cid) = self.users.get_by_second(user) {
-            Some((*cid, self.passwords.get(cid).unwrap().to_owned()))
+            Some((*cid, self.secretwords.get(cid).unwrap().to_owned()))
         } else {
             None
         }
@@ -41,9 +41,9 @@ impl Authenticator for TestAuthenticator {
 
 fn test_auth() -> TestAuthenticator {
     let mut auth = TestAuthenticator::new();
-    auth.add_user("alice", "alice_pass");
-    auth.add_user("bob", "bob_pass");
-    auth.add_user("charlie", "charlie_pass");
+    auth.add_user("alice", "alice_secret");
+    auth.add_user("bob", "bob_secret");
+    auth.add_user("charlie", "charlie_secret");
     auth
 }
 
@@ -90,7 +90,7 @@ fn bind_fail() {
 #[test]
 fn no_server() {
     let addr = "127.0.0.1:5555";
-    let _ = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let _ = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .err().expect("client was authenticated, but shouldnt have been!");
     //no server running on port 5555 probably
 }
@@ -107,14 +107,14 @@ fn client_bad_user() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client
-    let err = client_start::<TestClientward, TestServerward, _>(addr, "NOT_A_USER_NAME", "alice_pass", None)
+    let err = client_start::<TestClientward, TestServerward, _>(addr, "NOT_A_USER_NAME", "alice_secret", None)
     .err().expect("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::UnknownUsername));
 }
 
 #[test]
-fn client_password_mismatch() {
+fn client_secretword_mismatch() {
     let mut auth = test_auth();
     let addr = "127.0.0.1:5557";
     //start server
@@ -125,7 +125,7 @@ fn client_password_mismatch() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client
-    let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_PASS", None)
+    let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_secret", None)
     .err().expect("client was authenticated, but shouldnt have been!");
     //expecting that the username will be rejected by our authenticator
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::ChallengeFailed));
@@ -143,11 +143,11 @@ fn client_twice() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client 0
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("first alice failed to join");
     assert_eq!(cid, ClientId(0));
 
-    let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .err().expect("client was authenticated, but shouldnt have been!");
     //alice cannot be logged in twice
     assert_eq!(err, ClientStartError::AuthenticationError(AuthenticationError::AlreadyLoggedIn));
@@ -165,12 +165,12 @@ fn two_clients() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client 0
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
     //start client 1
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_secret", None)
     .expect("bob failed to join");
     assert_eq!(cid, ClientId(1));
 }
@@ -188,7 +188,7 @@ fn server_send() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client 0
-    let (_, mut c_r, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, mut c_r, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
@@ -209,7 +209,7 @@ fn client_send() {
     thread::spawn(move || cntl.accept_all(&mut auth) );
     
     //start client 0
-    let (mut c_w, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (mut c_w, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
@@ -241,15 +241,15 @@ fn broadcast() {
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
 
-    let (_, mut alice_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, mut alice_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
-    let (_, mut bob_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    let (_, mut bob_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_secret", None)
     .expect("bob failed to join");
     assert_eq!(cid, ClientId(1));
 
-    let (_, mut charlie_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_pass", None)
+    let (_, mut charlie_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_secret", None)
     .expect("charlie failed to join");
     assert_eq!(cid, ClientId(2));
 
@@ -270,7 +270,7 @@ fn fine_server_control() {
     .expect("server start failed");
 
     // the server isnt listening. alice can't connect!
-    client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .err().expect("alice was authenticated, but shouldnt have been!");
 
     //start a new thread to listen for the server endlessly
@@ -278,17 +278,17 @@ fn fine_server_control() {
 
     
     // bob gets accepted now that the server is listening
-    client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_secret", None)
     .expect("bob was expecting to be authenticated!");
 }
 
 #[test]
-fn file_password_auth() {
+fn file_secretword_auth() {
     use std::path::Path;
     let addr = "127.0.0.1:5566";
     //create an authenticator given by Axial. Start it with a path to the folder
-    //this folder contains one file: `alice` with contents `12$alice_pass`
-    let mut auth = authenticators::FilesPasswordAuth::new(Path::new("./file_password_auth_data"));
+    //this folder contains one file: `alice` with contents `12$alice_secret`
+    let mut auth = authenticators::FilessecretwordAuth::new(Path::new("./file_secretword_auth_data"));
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
@@ -297,23 +297,23 @@ fn file_password_auth() {
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
 
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(12));
 
-    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_pass", None)
+    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_secret", None)
     .err().expect("charlie joined somehow");
 }
 
 #[test]
-fn password_auth() {
+fn secretword_auth() {
     let addr = "127.0.0.1:5567";
-    let mut auth = authenticators::PasswordAuth::new_from_vec(
-        vec![("alice".to_owned(),   "alice_pass".to_owned()),
-             ("bob".to_owned(),     "bob_pass".to_owned())]
+    let mut auth = authenticators::secretwordAuth::new_from_vec(
+        vec![("alice".to_owned(),   "alice_secret".to_owned()),
+             ("bob".to_owned(),     "bob_secret".to_owned())]
     );
     //create an authenticator given by Axial. Start it with a path to the folder
-    //this folder contains one file: `alice` with contents `12$alice_pass`
+    //this folder contains one file: `alice` with contents `12$alice_secret`
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
@@ -322,15 +322,15 @@ fn password_auth() {
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
 
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
-    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_secret", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(1));
 
-    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_pass", None)
+    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_secret", None)
     .err().expect("charlie joined somehow");
 }
 
