@@ -1,9 +1,10 @@
 # Axial
+========
 
 ## Purpose
 Axial provides a channel-like abstraction over single-server distributed
 systems. It shines in the case of _users_ that persist over _sessions_.
-The goal is to abstract away the details of:
+Axial abstracts away the details of:
 1. Newcomer client identification & authentication
 1. Message serialization & deserialization
 1. Server-side broadcast, multicast
@@ -29,15 +30,7 @@ Elements above marked with an asterisk (*) potentially have behaviours defined
 by the users' trait implementations.
 
 
-
-## Usefulness
-One use case is that of a server-client architecture
-for a multiplayer game. Clients send requests for game data OR player actions
-as they are generated/needed. The server responds to these requests and pushes
-game update messages.
-
-
-## Using It Yourself
+## Usage
 1. On both server and client side, mark your serializable message
 structs using the traits `Serverward` and `Clientward`. These structs should
 also be the same on both sides.
