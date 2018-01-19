@@ -1,7 +1,7 @@
-# sc-entral
+# sc-hannel
 ## Purpose
 sc-entral provides a channel-like abstraction over a centralized distributed
-system. It shines in the case of persistent user "accounts".
+system. It shines in the case of _users_ that persist over _sessions_.
 The goal is to abstract away the details of:
 1. Newcomer client identification & authentication
 1. Message serialization & deserialization
