@@ -3,6 +3,18 @@ name = "axial"
 version = "0.1.0"
 authors = ["sirkibsirkib <christopher.esterhuyse@gmail.com>"]
 
+
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/sirkibsirkib/axial"
+description = """
+A channel-like abstraction over single-server distributed systems.
+Axial abstracts away the details of:
+1. Newcomer client identification & authentication
+2. Message serialization & deserialization
+3. Server-side broadcast, multicast
+"""
+
 [dependencies]
 magnetic = "2.0.0"
 trailing_cell = "0.3.0"

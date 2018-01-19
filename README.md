@@ -63,7 +63,7 @@ this enum your `Serverward` message type.
 To authenticate a newcomer client, participants adhere to the following
 protocol:
 
-```java
+```
 S[x]    secret of client x  | I[x]  | client id for client x
 R       random number       | X+Y  concatenation of x and y
 H[x(]   hash of string x    | 
