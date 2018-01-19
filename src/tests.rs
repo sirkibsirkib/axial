@@ -48,16 +48,6 @@ fn test_auth() -> TestAuthenticator {
 }
 
 
-
-fn test_password_auth() -> authenticators::PasswordAuth {
-    authenticators::PasswordAuth::new_from_vec(
-        vec![("alice".to_owned(),   "alice_pass".to_owned()),
-             ("bob".to_owned(),     "bob_pass".to_owned()),
-             ("charlie".to_owned(), "charlie_pass".to_owned())]
-    )
-}
-
-
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
 enum TestClientward {
     HelloToClient,
@@ -293,26 +283,55 @@ fn fine_server_control() {
 }
 
 #[test]
-fn two_clients_password_auth() {
-    let mut auth = test_password_auth();
-    let addr = "127.0.0.1:5565";
+fn file_password_auth() {
+    use std::path::Path;
+    let addr = "127.0.0.1:5566";
+    //create an authenticator given by Axial. Start it with a path to the folder
+    //this folder contains one file: `alice` with contents `12$alice_pass`
+    let mut auth = authenticators::FilesPasswordAuth::new(Path::new("./file_password_auth_data"));
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
-    
-    
+    //start client 0
+
     //start a new thread to listen for the server endlessly
     thread::spawn(move || cntl.accept_all(&mut auth) );
-    
+
+    let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
+    .expect("alice failed to join");
+    assert_eq!(cid, ClientId(12));
+
+    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_pass", None)
+    .err().expect("charlie joined somehow");
+}
+
+#[test]
+fn password_auth() {
+    let addr = "127.0.0.1:5567";
+    let mut auth = authenticators::PasswordAuth::new_from_vec(
+        vec![("alice".to_owned(),   "alice_pass".to_owned()),
+             ("bob".to_owned(),     "bob_pass".to_owned())]
+    );
+    //create an authenticator given by Axial. Start it with a path to the folder
+    //this folder contains one file: `alice` with contents `12$alice_pass`
+    //start server
+    let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
+    .expect("server start failed");
     //start client 0
+
+    //start a new thread to listen for the server endlessly
+    thread::spawn(move || cntl.accept_all(&mut auth) );
+
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_pass", None)
     .expect("alice failed to join");
     assert_eq!(cid, ClientId(0));
 
-    //start client 1
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "bob", "bob_pass", None)
-    .expect("bob failed to join");
+    .expect("alice failed to join");
     assert_eq!(cid, ClientId(1));
+
+    client_start::<TestClientward, TestServerward, _>(addr, "charlie", "charlie_pass", None)
+    .err().expect("charlie joined somehow");
 }
 
 #[test]

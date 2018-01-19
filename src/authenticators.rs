@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::collections::HashMap;
 
+/// weffewf
+/// 
 pub struct FilesPasswordAuth {
     folder: PathBuf,
 }
@@ -18,15 +20,15 @@ impl FilesPasswordAuth {
 
 impl Authenticator for FilesPasswordAuth {
     // folder containing a file per user. the name is the same as the user
-    // the contents of a file are `<clientId>:secret`
-    // eg:  file `alice` contains `4:alice_pass`
+    // the contents of a file are `<clientId>$<secret>`
+    // eg:  file `alice` contains `4$alice_pass`
     fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)> {
         let mut buf = PathBuf::from(&self.folder);
         buf.push(user);
         if let Ok(mut f) = File::open(buf.as_path()) {
             let mut contents = String::new();
             if f.read_to_string(&mut contents).is_ok() {
-                let mut split: Vec<&str> = contents.split(":").collect();
+                let mut split: Vec<&str> = contents.split("$").collect();
                 if split.len() != 2 {
                     return None;
                 }
