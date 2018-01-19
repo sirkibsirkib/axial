@@ -14,11 +14,12 @@ Each node in the system interacts with their peers via personal
 
 ```
 Client0 S|----.
-        R|<--. \
+        R|<--. \    .
               \ `-->|\
                `----| |-->|R  Server
 Client1 S|--------->| |---|S
         R|<---------|/
+                    ´
 ```
 
 On the server-side, the server _identifies_ and _authenticates_ incoming
@@ -27,6 +28,10 @@ handshake before accepting a newcomer.
 
 Elements above marked with an asterisk (*) potentially have behaviours defined
 by the users' trait implementations.
+
+If, for whatever reason, one would like to instantiate a single server and a
+single client on the local machine, the function `start_coupler` returns the
+expected readers and writers for both, using the same API. 
 
 
 ## Usage

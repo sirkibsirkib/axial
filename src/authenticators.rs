@@ -9,32 +9,31 @@ use std::collections::HashMap;
 /// is never stored in memory.
 /// 
 /// Initialized with the path to the directory where it finds its user files.
-/// See `FilesPasswordAuth::new` for more information
-pub struct FilesPasswordAuth {
+/// See `FilesSecretAuth::new` for more information
+pub struct FilesSecretAuth {
     folder: PathBuf,
 }
 
-/// Returns a new FilesPasswordAuth object.
+/// Returns a new FilesSecretAuth object.
 /// The path argument is where the authenticator will attempt to locate user files
 /// a user file for user <u> with ClientId <c> and secret <s> is defined as:
 ///     a plaintext file named <u> (no extension), with contents: `<c>$<s>`
 ///     for example: file 'alice' containing text '0$alice_secret'
-impl FilesPasswordAuth {
+impl FilesSecretAuth {
     pub fn new(path: &Path) -> Self {
-        FilesPasswordAuth {
+        FilesSecretAuth {
             folder: PathBuf::from(path),
         }
     }
 
-    pub fn change_path(&mut self, new_path: &Path) {
+    pub fn set_path(&mut self, new_path: &Path) {
         self.folder = PathBuf::from(new_path);
     }
+
+    pub fn get_path(&self) -> &Path { &self.folder }
 }
 
-impl Authenticator for FilesPasswordAuth {
-    // folder containing a file per user. the name is the same as the user
-    // the contents of a file are `<clientId>$<secret>`
-    // eg:  file `alice` contains `4$alice_pass`
+impl Authenticator for FilesSecretAuth {
     fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)> {
         let mut buf = PathBuf::from(&self.folder);
         buf.push(user);
@@ -56,11 +55,18 @@ impl Authenticator for FilesPasswordAuth {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct PasswordAuth {
+/// Authenticator object that stores the userbase in memory as a simple HashMap.
+/// The map's structure corresponds with the nature of the `Authenticator`
+/// trait's function `identity_and_secret`, with username acting as a key, and 
+/// the tuple (ClientId, secret) acting as a value.
+pub struct MapAuth {
     map: HashMap<String, (ClientId, String)>,
 }
 
-impl PasswordAuth {
+impl MapAuth {
+    /// Returns a new MapAuth From a given vector with elements (u,s)
+    /// as username and secret respectively. The index of the element
+    /// determines its ClientId (0 maps to ClientId(0))
     pub fn new_from_vec(users: Vec<(String, String)>) -> Self {
         let mut map = HashMap::new();
         let mut num = 0;
@@ -68,23 +74,26 @@ impl PasswordAuth {
             map.insert(user, (ClientId(num), secret));
             num += 1;
         }
-        PasswordAuth { map: map }
+        MapAuth { map: map }
     }
 
+    /// Returns a new MapAuth with the given map.
     pub fn new_from_map(map: HashMap<String, (ClientId, String)>) -> Self {
-        PasswordAuth { map: map }
+        MapAuth { map: map }
     }
 
+    /// Exposes the inner map for inspection
     pub fn get_inner_map(&self) -> &HashMap<String, (ClientId, String)> {
         &self.map
     }
 
+    /// Exposes the inner map for modification
     pub fn get_mut_map(&mut self) -> &mut HashMap<String, (ClientId, String)> {
         &mut self.map
     }
 }
 
-impl Authenticator for PasswordAuth {
+impl Authenticator for MapAuth {
     fn identity_and_secret(&mut self, user: &str) -> Option<(ClientId, String)> {
         self.map.get(user).map(|x| x.to_owned())
     }

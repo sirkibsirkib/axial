@@ -283,12 +283,12 @@ fn fine_server_control() {
 }
 
 #[test]
-fn file_secretword_auth() {
+fn file_secret_auth() {
     use std::path::Path;
     let addr = "127.0.0.1:5566";
     //create an authenticator given by Axial. Start it with a path to the folder
     //this folder contains one file: `alice` with contents `12$alice_secret`
-    let mut auth = authenticators::FilessecretwordAuth::new(Path::new("./file_secretword_auth_data"));
+    let mut auth = authenticators::FilesSecretAuth::new(Path::new("./file_secret_auth_data"));
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
@@ -306,9 +306,9 @@ fn file_secretword_auth() {
 }
 
 #[test]
-fn secretword_auth() {
+fn map_auth() {
     let addr = "127.0.0.1:5567";
-    let mut auth = authenticators::secretwordAuth::new_from_vec(
+    let mut auth = authenticators::MapAuth::new_from_vec(
         vec![("alice".to_owned(),   "alice_secret".to_owned()),
              ("bob".to_owned(),     "bob_secret".to_owned())]
     );

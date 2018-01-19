@@ -15,12 +15,21 @@ use common::*;
 
 //////////////////////////// RETURN TYPES & API ////////////////////////////////
 
+/// This trait defines the behaviour of both the client-side remote sender and
+/// the client-half of the coupler
 pub trait ServerwardSender<S: Serverward> {
+    /// Sends the given Serverward message to the server. Returns `true` IFF
+    /// the message was send successfully.
     fn send(&mut self, msg: &S) -> bool;
+
+    /// Shuts down the connection (shutting down the underlying TcpStream and 
+    /// Receiver thread if they exist)
     fn shutdown(self);
 }
 
 #[derive(Debug)]
+/// This object acts as a client-side Writer, implementing the trait
+/// `ServerwardSender`. The messages it sends go over the network.
 pub struct RemoteServerwardSender<S: Serverward> {
 	stream: TcpStream,
     _phantom: PhantomData<S>,
@@ -41,6 +50,8 @@ where S: Serverward {
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
+/// These are the possible errors that can occur when attempting to create and
+/// connect a new client to a remote server.
 pub enum ClientStartError {
     ConnectFailed,
     ClientThresholdReached,
@@ -87,6 +98,16 @@ type SpscPair<S> = (
     SPSCConsumer<S, DynamicBuffer<S>>,
 );
 
+/// The main function for creating the client-side half of a remote connection.
+/// The function requires the address of the server. If successful, this returns
+/// a triple (s,r,c) where `s` is the (output) sender object, `r` is the (input)
+/// receiver object, and `c` is the ClientId that the server used to identify
+/// this client.
+/// 
+/// __Note:__ This function spawns a thread that does the work of deserializing
+/// incoming message objects. It feeds the underlying `magnetic::Producer`.
+/// The thread stops when the underlying `TcpStream` shuts down. This can be
+/// forced by calling `shutdown` on the returned _writer_ object.
 pub fn client_start<C,S,T>(addr: T, user: &str, secret: &str, connect_timeout: Option<Duration>)
 -> ClientResult<C,S>
 where

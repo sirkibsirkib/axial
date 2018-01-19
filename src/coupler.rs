@@ -8,7 +8,10 @@ use magnetic::spsc::spsc_queue;
 use server::ClientwardSender;
 use client::ServerwardSender;
 
-
+/// This object implements ClientwardSender, but sends messages locally
+/// (producing them in memory for the Reader to consume)
+/// 
+/// This struct is created with `coupler_start`.
 pub struct LocalClientwardSender<C: Clientward> {
     consuming_client_id: ClientId,
 	producer: SPSCProducer<C, DynamicBuffer<C>>,
@@ -32,7 +35,6 @@ C: Clientward {
                 if self.producer.push(msg.clone()).is_ok() {
                     successes += 1;
                 }
-                
             }
         }
         successes
@@ -49,7 +51,7 @@ C: Clientward {
     }
 }
 
-
+/// 
 pub struct LocalServerwardSender<S: Serverward> {
     my_cid: ClientId,
 	producer: SPSCProducer<Signed<S>, DynamicBuffer<Signed<S>>>
@@ -79,7 +81,7 @@ C: Clientward,
 S: Serverward, {
     // clientward
     let (cward_p, cward_c) = spsc_queue(DynamicBuffer::new(128).unwrap()); 
-    
+
     // serverward
     let (sward_p, sward_c) = spsc_queue(DynamicBuffer::new(128).unwrap());
     (
