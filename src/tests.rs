@@ -1,6 +1,7 @@
 use bidir_map::BidirMap;
 use std::collections::HashMap;
 use std::thread;
+use super::Authenticator;
 
 use super::*;
 
@@ -97,14 +98,14 @@ fn no_server() {
 
 #[test]
 fn client_bad_user() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5556";
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
 
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "NOT_A_USER_NAME", "alice_secret", None)
@@ -115,14 +116,14 @@ fn client_bad_user() {
 
 #[test]
 fn client_secretword_mismatch() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5557";
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
 
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client
     let err = client_start::<TestClientward, TestServerward, _>(addr, "alice", "WRONG_secret", None)
@@ -133,14 +134,14 @@ fn client_secretword_mismatch() {
 
 #[test]
 fn client_twice() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5558";
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client 0
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
@@ -155,14 +156,14 @@ fn client_twice() {
 
 #[test]
 fn two_clients() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5559";
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client 0
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
@@ -178,14 +179,14 @@ fn two_clients() {
 
 #[test]
 fn server_send() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5560";
     //start server
     let (mut s_w, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client 0
     let (_, mut c_r, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
@@ -199,14 +200,14 @@ fn server_send() {
 
 #[test]
 fn client_send() {
-    let mut auth = test_auth();
+    let auth = test_auth();
     let addr = "127.0.0.1:5561";
     //start server
     let (_, mut s_r, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
     
     //start client 0
     let (mut c_w, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
@@ -234,12 +235,12 @@ fn drop() {
 #[test]
 fn broadcast() {
     let addr = "127.0.0.1:5563";
-    let mut auth = test_auth();
+    let auth = test_auth();
     let (mut s_w, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
 
     let (_, mut alice_reader, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
@@ -265,7 +266,7 @@ fn broadcast() {
 #[test]
 fn fine_server_control() {
     let addr = "127.0.0.1:5564";
-    let mut auth = test_auth();
+    let auth = test_auth();
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
 
@@ -274,7 +275,7 @@ fn fine_server_control() {
     .err().expect("alice was authenticated, but shouldnt have been!");
 
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
 
     
     // bob gets accepted now that the server is listening
@@ -288,14 +289,14 @@ fn file_secret_auth() {
     let addr = "127.0.0.1:5566";
     //create an authenticator given by Axial. Start it with a path to the folder
     //this folder contains one file: `alice` with contents `12$alice_secret`
-    let mut auth = authenticators::FilesSecretAuth::new(Path::new("./file_secret_auth_data"));
+    let auth = authenticators::FilesSecretAuth::new(Path::new("./file_secret_auth_data"));
     //start server
     let (_, _, mut cntl) = server_start::<_,TestClientward,TestServerward>(addr)
     .expect("server start failed");
     //start client 0
 
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
 
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");
@@ -308,7 +309,7 @@ fn file_secret_auth() {
 #[test]
 fn map_auth() {
     let addr = "127.0.0.1:5567";
-    let mut auth = authenticators::MapAuth::new_from_vec(
+    let auth = authenticators::MapAuth::new_from_vec(
         vec![("alice".to_owned(),   "alice_secret".to_owned()),
              ("bob".to_owned(),     "bob_secret".to_owned())]
     );
@@ -320,7 +321,7 @@ fn map_auth() {
     //start client 0
 
     //start a new thread to listen for the server endlessly
-    thread::spawn(move || cntl.accept_all(&mut auth) );
+    thread::spawn(move || cntl.accept_all(auth) );
 
     let (_, _, cid) = client_start::<TestClientward, TestServerward, _>(addr, "alice", "alice_secret", None)
     .expect("alice failed to join");

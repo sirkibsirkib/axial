@@ -74,13 +74,17 @@ impl From<MessageError> for ClientStartError {
 fn client_connect<T: ToSocketAddrs>(addr: T, connect_timeout: Option<Duration>) -> Result<TcpStream, ClientStartError> {
     match connect_timeout {
         Some(duration) => {
-            for a in addr.to_socket_addrs().unwrap()   {
+            println!("some duration");
+            for a in addr.to_socket_addrs().unwrap() {
+                println!("trying ... {:?}", &a);
                 let x = TcpStream::connect_timeout(&a, duration) ?;
                 return Ok(x);
             }
             Err(ClientStartError::ConnectFailed)
         },
         None => {
+
+            println!("no timeout");
             Ok(TcpStream::connect(addr)?)
         },
     }

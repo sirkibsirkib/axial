@@ -13,6 +13,7 @@ use rand::Rng;
 use magnetic::buffer::dynamic::DynamicBuffer;
 use magnetic::{Producer};
 use magnetic::mpsc::{MPSCConsumer,MPSCProducer,mpsc_queue};
+// use net2::TcpListenerExt;
 
 extern crate trailing_cell;
 use self::trailing_cell::{TakesMessage,TcReader,TcWriter};
@@ -49,6 +50,15 @@ impl<M> Signed<M> where M: Message {
     }
 }
 
+/// This object is returned as a result of `server_start` and has no analogue on
+/// the client-side. This object is the owner of the underlying stream objects.
+/// 
+/// It offers functions to accept clients, kick clients, and return information
+/// about the clients currently connected.
+/// 
+/// The underlying TcpListener and TcpStreams are owned by this object, and are
+/// dropped when this object is dropped or `shutdown`. All listening threads are
+/// killed when their respective stream is shutdown.
 pub struct ServerControl<C,S>
 where C: Clientward, S: Serverward, {
     w: TcWriter<StateChange>,
@@ -74,14 +84,19 @@ where C: Clientward, S: Serverward, {
         }
     }
 
-    pub fn accept_all<A: Authenticator>(&mut self, auth: &mut A) {
-        loop { self.accept_one(auth); }
+    /// 
+    pub fn accept_all<A: Authenticator>(&mut self, mut auth: A) {
+        loop { self.accept_one(&mut auth); }
     }
 
     pub fn accept_all_waiting<A: Authenticator>(&mut self, auth: &mut A) -> u32 {
         let mut total = 0;
-        while let Some(_) = self.accept_one(auth) { total += 1 }
+        if self.listener.set_nonblocking(true).is_ok() {
+            while let Some(_) = self.accept_one(auth) { total += 1 }
+            let _ = self.listener.set_nonblocking(false);
+        }
         total
+        
     }
 
     pub fn accept_one<A: Authenticator>(&mut self, auth: &mut A) -> Option<ClientId> {
