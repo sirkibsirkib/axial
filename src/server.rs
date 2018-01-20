@@ -84,23 +84,36 @@ where C: Clientward, S: Serverward, {
         }
     }
 
-    /// 
+    /// Consumes the given authenticator and listens endlessly. This function is
+    /// syntactic sugar for `accept_one` inside a `loop`.
     pub fn accept_all<A: Authenticator>(&mut self, mut auth: A) {
-        loop { self.accept_one(&mut auth); }
+        loop { let _ = self.accept_one(&mut auth); }
     }
 
-    pub fn accept_all_waiting<A: Authenticator>(&mut self, auth: &mut A) -> u32 {
-        let mut total = 0;
+    /// Attempts to accept incoming connections (nonblocking). Returns when none
+    /// more are waiting with the number of accepted connections. Returns
+    /// (o,e) where `o` is the number of accepted connections that resulted in a
+    /// new client, and `e` is the number of  accepted connections that DID NOT
+    /// result in a new client
+    pub fn accept_all_waiting<A: Authenticator>(&mut self, auth: &mut A) -> (u32, u32) {
+        let (mut o, mut e) = (0, 0);
         if self.listener.set_nonblocking(true).is_ok() {
-            while let Some(_) = self.accept_one(auth) { total += 1 }
+            while let Ok(x) = self.accept_one(auth) {
+                if x.is_some() { o += 1 } else { e += 1 };
+            }
             let _ = self.listener.set_nonblocking(false);
         }
-        total
-        
+        (o, e)
     }
 
-    pub fn accept_one<A: Authenticator>(&mut self, auth: &mut A) -> Option<ClientId> {
+    /// Blocks until one incoming connection is accepted. Returns Err IFF
+    /// something goes wrong. Returns Ok(Some(cid)) IFF the connection resulted
+    /// in a new client.  
+    pub fn accept_one<A: Authenticator>(&mut self, auth: &mut A) -> Result<Option<ClientId>,()> {
         if let Ok((mut stream, _)) = self.listener.accept() {
+
+            //TODO spawn a new thread here??
+
             if let Some(cid) = server_handshake(auth, &mut stream, &mut self.acceptor_buffer, &mut self.w, &mut self.streams) {
                 let mut stream_clone = stream.try_clone().unwrap();
                 let mut a_p_clone = self.producer.clone();
@@ -113,24 +126,20 @@ where C: Clientward, S: Serverward, {
                         }
                     }
                 });
-                Some(cid)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+                Ok(Some(cid))
+            } else { Ok(None) }
+        } else { Err(()) }
     }
 
+    /// Attempts to kick out a specific Client. Returns `true` IFF this was done
+    /// successfully.
     pub fn kick(&mut self, cid: ClientId) -> bool {
         self.streams.update();
         if self.dead {return false}
         if self.streams.contains_key(&cid) {
             self.w.apply_change(StateChange::Leave(cid));
             true
-        } else {
-            false
-        }
+        } else { false }
     }
 
     fn shutdown_wrapper(&mut self) { //PRIVATE
@@ -141,16 +150,21 @@ where C: Clientward, S: Serverward, {
         self.dead = true;
     }
 
+    /// Shuts down the server controller, killing the client sockets and any
+    /// receiver threads.
     pub fn shutdown(mut self) {
         self.shutdown_wrapper();
     }
 
+    /// Retutns a set containing all the `ClientId`s of clients currently
+    /// connected.
     pub fn connected_clients(&mut self) -> HashSet<ClientId> {
         if self.dead {return HashSet::new()}
         self.streams.update();
         self.streams.keys().map(|x| *x).collect()
     }
 
+    /// Returns `true` IFF the given client is connected.
     pub fn client_is_connected(&mut self, cid: ClientId) -> bool {
         if self.dead {return false}
         self.streams.update();
@@ -167,8 +181,9 @@ S: Serverward, {
 }
 
 
-// S only
-// runs in local thread
+/// This struct implements `ClientwardSender` and is returned from a successful
+/// `server_start` call. This object facilitates sending messages to clients
+/// over the network
 pub struct RemoteClientwardSender<C: Clientward> {
 	streams: TrailingStreams,
     _phantom: PhantomData<C>,
@@ -220,22 +235,18 @@ C: Clientward {
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
+/// An enum representing the possible variants of error resulting from a 
+/// `server_start` call
 pub enum ServerStartError {
     BindFailed,
 }
 impl From<io::Error> for ServerStartError {
     #[inline]
-    fn from(_: io::Error) -> Self {
-        //TODO ??
-        ServerStartError::BindFailed
-    }
+    fn from(_: io::Error) -> Self { ServerStartError::BindFailed }
 }
 impl From<MessageError> for ServerStartError {
     #[inline]
-    fn from(_: MessageError) -> Self {
-        //TODO ??
-        ServerStartError::BindFailed
-    }
+    fn from(_: MessageError) -> Self { ServerStartError::BindFailed }
 }
 
 ///////////////////////// PRIVATE HELPERS //////////////////////////////////////
@@ -280,6 +291,13 @@ type ServRes<C,S> = (
     ServerControl<C,S>,
 );
 
+/// The main function for creating the server-side half of a remote connection.
+/// The function requires the address for the server to bind to.
+/// If successful, this returns
+/// a triple (s,r,c) where `s` is the (output) sender object, `r` is the (input)
+/// receiver object, and `c` is the `ServerControl` object that can be used to
+/// control how and when the server accepts new clients, as well as the
+/// interactions with an `Authenticator`.
 pub fn server_start<A,C,S>(addr: A)
  -> Result<ServRes<C,S>, ServerStartError>
 where
@@ -299,10 +317,7 @@ S: Serverward, {
         ::common::new_receiver(c),
         ServerControl::new(w, listener, a_p),
     ))
-} 
-
-//TODO make coupler
-
+}
 
 ////////////////////////////// AUX FUNCTIONS ///////////////////////////////////
 
@@ -318,7 +333,7 @@ where
 {
     let mut accepted: Option<ClientId> = None;
     r.update();
-    if let Ok(MetaServerward::LoginRequest(user)) = stream.single_read(acceptor_buffer) {
+    if let Ok(MetaServerward::LoginRequest(user)) = stream.single_timeout_breaking_read(acceptor_buffer, *ANSWER_DUR) {
         if let Some((cid, ref secret)) = auth.identity_and_secret(&user) {
             debug_println!("answer was correct! OK");
             for _ in 0..3 {
